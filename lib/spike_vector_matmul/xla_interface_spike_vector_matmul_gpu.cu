@@ -123,6 +123,8 @@ void spike_vector_matmul_gpu_f32_spikes_grad(cudaStream_t stream, void** buffers
     printf("Warning: block_dim.x is not a multiple of 32 which will lead to supoptimal performance.");
   }
   spike_vector_grad_gpu<<<grid_dim,block_dim,max_num_spikes*sizeof(float),stream>>>(matrix, spike_ids, spike_grads_precalc_surr, num_spikes, result_grads, spike_grads_res, batchsize, num_cols, max_num_spikes);
+  // TODO necessary due to cudaMemcpyAsync ?
+  cudaStreamSynchronize(stream);
 }
 
 

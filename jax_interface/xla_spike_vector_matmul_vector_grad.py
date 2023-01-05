@@ -29,12 +29,14 @@ def get_spike_vector_matmul_vector_grad_fn(op_name: str, so_file: str, fn_name: 
     def _spike_vector_matmul_vector_grad_abstract_eval(matrix, vals, spike_vector, *, use_grad_num_spikes):
         assert matrix.ndim == 2
         assert matrix.dtype == np.dtype("float32")
+        print(vals.shape)
+        print(spike_vector)
         if (spike_vector.batchsize > 1):
             assert len(vals.shape) == 2 
             assert vals.shape[0] >= spike_vector.batchsize
-            assert vals.shape[1] >= spike_vector.max_num_spikes
-        else:
-            assert vals.shape[-1] >= spike_vector.max_num_spikes 
+        #     assert vals.shape[1] >= spike_vector.max_num_spikes
+        # else:
+        #     assert vals.shape[-1] >= spike_vector.max_num_spikes 
         # print(vals.shape)
         # print(spike_vector)
         # print(spike_vector.shape)

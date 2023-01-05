@@ -22,10 +22,6 @@ config.parse_flags_with_absl()
 # TODO(jakevdp): use a setup/teardown method to populate and unpopulate all the
 # dictionaries associated with the following objects.
 
-def calc_add_batch_dim(batchsize: int, max_num_spikes: int):
-    add_batch_dim = max(int((2 * batchsize) / max_num_spikes), 1)
-    return add_batch_dim
-
 # Define a sparse array data structure. The important feature here is that
 # it is a jaxpr object that is backed by two device buffers.
 class SparseSpikeVector:
@@ -53,17 +49,17 @@ class SparseSpikeVector:
 
             if not batched: 
                 spike_ids = spike_ids[None, :]
-            add_batch_dim = calc_add_batch_dim(batchsize, max_num_spikes)
             if batched:
                 assert num_spikes.shape[-1] == batchsize
-            num_spikes_padded = jax.numpy.pad(num_spikes.flatten(), 0, add_batch_dim*max_num_spikes-num_spikes.size, mode='empty').reshape(add_batch_dim, max_num_spikes)
-            comb_spike_data = jax.numpy.concatenate([spike_ids, num_spikes_padded], axis=0, dtype=np.uint32).view(dtype=np.float32) #.continuous()
-            # TODO where to call contiguous? on spike_ids, or comb_spike_data?
+            shape = AbstractSparseSpikeVector.calc_comb_spike_data_shape(is_stacked, batched, stack_size, batchsize, max_num_spikes)
+            comb_spike_data = jax.numpy.empty(shape, dtype=spike_ids.dtype).flatten()
+            comb_spike_data[:spike_ids.size] = spike_ids.flatten()
+            comb_spike_data[-num_spikes.size:] = num_spikes.flatten()
+            comb_spike_data = comb_spike_data.reshape(shape).view(dtype=np.float32)
         else:
             assert aval is not None
             assert np.dtype(comb_spike_data.dtype) == np.float32
             batched = aval.batched
-
 
         if aval is None:
             aval = AbstractSparseSpikeVector(batchsize if batched else None, max_num_spikes, num_neurons, stack_size if is_stacked else None, np.float32)
@@ -83,6 +79,11 @@ class SparseSpikeVector:
         return self.aval.batchsize
 
     @property
+    def stack_size(self):
+        return self.aval.stack_size
+
+
+    @property
     def max_num_spikes(self):
         return self.aval.max_num_spikes
 
@@ -100,16 +101,18 @@ class SparseSpikeVector:
 
     @property
     def spike_ids(self):
-        data = self.comb_spike_data[..., :self.batchsize, :]
-        if not self.batched:
-            data = data[0]
+        nvals = self.batchsize*self.max_num_spikes 
+        data = self.comb_spike_data.reshape((self.stack_size, -1))[:, :nvals]
+        shape = (*self.shape[:-1], self.max_num_spikes)
+        data = data.reshape(shape)
         return data.view(dtype=np.uint32)
 
     @property
     def spike_grads(self):
-        data = self.comb_spike_data[..., self.batchsize:2*self.batchsize, :]
-        if not self.batched:
-            data = data[0]
+        nvals = self.batchsize*self.max_num_spikes 
+        data = self.comb_spike_data.reshape((self.stack_size, -1))[:, nvals:2*nvals]
+        shape = (*self.shape[:-1], self.max_num_spikes)
+        data = data.reshape(shape)
         return data.view(dtype=np.float32)
 
     @property
@@ -126,9 +129,15 @@ class SparseSpikeVector:
 
     @property
     def num_spikes(self):
-        data = self.comb_spike_data[..., 2*self.aval.batchsize:, :].flatten()[:self.size_num_spikes]
+        nvals = self.batchsize*self.max_num_spikes 
+        data = self.comb_spike_data.reshape((self.stack_size, -1))[:, 2*nvals:]
+        shape = []
+        if self.is_stacked:
+            shape.append(self.stack_size)
+        shape.append(2)
         if self.batched:
-            data = data.reshape(2, self.aval.batchsize)
+            shape.append(self.batchsize)
+        data = data.reshape(shape)
         return data.view(dtype=np.uint32)
 
     def __repr__(self):
@@ -195,7 +204,7 @@ class AbstractSparseSpikeVector(core.ShapedArray):
         self.batched = True if batchsize is not None else False
         self.batchsize = batchsize if batchsize is not None else 1
         self.max_num_spikes = max_num_spikes
-        comb_data_shape = self.calc_comb_spike_data_shape(self.stack_size, self.batchsize, max_num_spikes)
+        comb_data_shape = self.calc_comb_spike_data_shape(self.is_stacked, self.batched, self.stack_size, self.batchsize, max_num_spikes)
         super().__init__(comb_data_shape, dtypes.canonicalize_dtype(dtype))
         # super().__init__(dtypes.canonicalize_dtype(dtype))
         # # self.shape = self.calc_dense_spike_data_shape(self.stack_size, self.batchsize, num_neurons)
@@ -214,13 +223,16 @@ class AbstractSparseSpikeVector(core.ShapedArray):
     def underlying_dtype(self):
         return np.uint32
 
-    def calc_comb_spike_data_shape(self, stack_size: int, batchsize: int, max_num_spikes: int):
-        add_batch_dim = calc_add_batch_dim(batchsize, max_num_spikes)
-        # 2*batchsize for spike_ids and grads
-        if self.is_stacked:
-            return (stack_size, 2*batchsize + add_batch_dim, max_num_spikes)
-        else:
-            return (2*batchsize + add_batch_dim, max_num_spikes)
+    @staticmethod
+    def calc_comb_spike_data_shape(is_stacked: bool, batched: bool, stack_size: int, batchsize: int, max_num_spikes: int):
+        last_dim = 2*max_num_spikes + 2
+        shape = []
+        if is_stacked:
+            shape.append(stack_size)
+        if batched:
+            shape.append(batchsize)
+        shape.append(last_dim)    
+        return tuple(shape)
 
     def calc_dense_spike_data_shape(self, stack_size: int, batchsize: int, num_neurons: int):
         dense_shape = []
@@ -236,6 +248,8 @@ class AbstractSparseSpikeVector(core.ShapedArray):
                 dtype=None, weak_type=None, named_shape=None):
         if batchsize is None:
             batchsize = self.batchsize if self.batched else None
+        elif batchsize == -1:
+            batchsize = None
         if max_num_spikes is None:
             max_num_spikes = self.max_num_spikes
         if num_neurons is None:
@@ -334,13 +348,28 @@ mlir.ir_type_handlers[AbstractSparseSpikeVector] = sparse_spike_vector_mlir_type
 def _map_shaped_array(
     size: int, axis: Optional[int], aval: AbstractSparseSpikeVector) -> AbstractSparseSpikeVector:
   assert axis is None or aval.shape[axis] == size
+
+  print("\n_map_shaped_array", aval, size, axis )
+  # print(aval)
+  if axis==0:
+    assert aval.is_stacked
+    retval = aval.update(stack_size=-1)
+  elif axis==1:
+    assert aval.batched
+    retval = aval.update(batchsize=-1)
+  elif axis is None:
+    retval = aval
+  else:
+    raise NotImplementedError
+  return retval
   
-  assert aval.is_stacked
-  # TODO only possible along stacked dim which is 0
-  assert axis == 0
-  if axis is None: 
-    return aval
-  return aval.update(stack_size=-1)
+#   # TODO only possible along stacked dim which is 0
+#   print(axis)
+
+# #   assert axis == 0
+#   if axis is None: 
+#     return aval
+#   return 
 
 def _unmap_shaped_array(
     size: int, axis_name, axis: Optional[int], aval: AbstractSparseSpikeVector
@@ -348,13 +377,21 @@ def _unmap_shaped_array(
   named_shape = dict(aval.named_shape)
   named_shape.pop(axis_name, None)  # TODO: make this mandatory
 #   print("\nunmap", aval, size, axis, named_shape)
-  if axis is None: return aval.update(named_shape=named_shape)
+  print("\n_unmap_shaped_array", aval, size, axis, named_shape)
+
+  if axis is None: 
+    ret = aval.update(named_shape=named_shape)
   elif type(axis) is int:
-    assert axis == 0, "Only possible to unmap `AbstractSparseSpikeVector` along stacked dim."
-    ret = aval.update(stack_size=size, named_shape=named_shape)
-    # print("unmap", ret)
-    return ret
+    if not aval.batched:
+      assert axis==0
+      ret = aval.update(batchsize=size, named_shape=named_shape)
+    elif not aval.is_stacked:
+      assert axis==0
+      ret = aval.update(stack_size=size, named_shape=named_shape)
+    else: 
+      ValueError("Only possible to unmap `AbstractSparseSpikeVector` if it is not stacked or batched already.")
   else: raise TypeError(axis)
+  return ret
 
 core.aval_mapping_handlers[AbstractSparseSpikeVector] = (_map_shaped_array, _unmap_shaped_array)
 
@@ -395,3 +432,17 @@ from jax._src.lax.lax import squeeze_p, _squeeze_shape_rule, _squeeze_dtype_rule
 squeeze_p.def_abstract_eval(
       ft.partial(spike_and_standard_abstract_eval, squeeze_p, _squeeze_shape_rule, _squeeze_dtype_rule,
               _standard_weak_type_rule, standard_named_shape_rule))
+
+from jax._src.ad_util import aval_zeros_likers, jaxval_zeros_likers
+
+def _zeros_like_sparse_spike_vector_aval(aval):
+  return aval.update()
+
+def _zeros_like_sparse_spike_vector_aval(aval):
+  return aval.update()
+
+def _zeros_like_sparse_spike_vector(aval):
+  return SparseSpikeVector(comb_spike_data=np.zeros(aval.shape, np.uint32).view(aval.dtype), aval=aval)
+
+aval_zeros_likers[AbstractSparseSpikeVector] = _zeros_like_sparse_spike_vector
+# weak_type

@@ -73,19 +73,9 @@ def get_gen_spike_vector_fn(op_name: str, so_file: str, fn_name: str, platform: 
         batched = len(dims) > 1
         batchsize = dims[0] if batched else 1
         num_neurons = dims[-1]
-        max_num_spikes = cc_shape.sparse_shape[-1]
+        max_num_spikes = cc_shape.max_num_spikes
 
-        # print(cc_shape)
-        # print(cc_shape.sparse_shape)
-        # print(cc_shape.shape)
-        # print(cc_shape.dense_shape)
-        # sys.exit()
-
-        add_batch_dim = max(int((2 * batchsize) / max_num_spikes), 1)
-        # assert cc_shape.dtype == np.uint32
-        # print(type(cc_shape))
-        # sys.exit()
-        assert cc_shape.sparse_shape[-2:] == (2*batchsize + add_batch_dim, max_num_spikes)
+        # assert cc_shape.sparse_shape[-2:] == (batchsize, 2*max_num_spikes+2)
 
 
         # # The total size of the input is the product across dimensions

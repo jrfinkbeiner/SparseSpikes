@@ -46,7 +46,7 @@ def get_spike_vector_matmul_matrix_grad_fn(op_name: str, so_file: str, fn_name: 
 
         batchsize = 1 if result_shape.ndim == 1 else result_shape.shape[0]
         num_rows, num_cols = matrix_grad.shape
-        max_num_spikes = spike_vector_shape.shape[-1]
+        max_num_spikes = spike_vector_shape.max_num_spikes
 
         # operand_shapes = [xla.aval_to_xla_shape(av) for av in avals_in]
         operands_base = (spike_vector, results_grad)

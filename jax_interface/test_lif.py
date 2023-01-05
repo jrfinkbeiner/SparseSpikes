@@ -67,9 +67,27 @@ class LIFDenseNeuronState(NamedTuple):
 def linear_layer(weights, bias, inp):
     """Simple implementation of a fully connected layer."""
     if isinstance(inp, jnp.ndarray):
-        ret_val = weights @ inp
+        ret_val = inp @ weights
     else:
         ret_val = spike_vector_matmul(weights, inp)
+    if bias is not None:
+        ret_val += bias 
+    return ret_val
+
+def linear_layer_dense(weights, bias, inp):
+    """Simple implementation of a fully connected layer."""
+    ret_val = inp @ weights
+    print(weights.shape, inp.shape)
+    print(ret_val.shape)
+    if bias is not None:
+        ret_val += bias 
+    return ret_val
+
+def linear_layer_sparse(weights, bias, inp):
+    """Simple implementation of a fully connected layer."""
+    print(weights.shape, inp.shape)
+    ret_val = spike_vector_matmul(weights, inp)
+    print(ret_val.shape)
     if bias is not None:
         ret_val += bias 
     return ret_val
@@ -85,24 +103,27 @@ def get_lif_step(use_sparse: bool):
     """Function to return the correct LIF step function."""
     # reset_fn = sparse_reset if use_sparse else dense_reset
     gen_spike_fn = get_gen_spike_fn(use_sparse)
+    liner_layer_fn = linear_layer_sparse if use_sparse else linear_layer_dense
 
-    def lif_step(weights, alpha, beta, state, Sin_t, thresholds, *, max_num_spikes: Optional[int] = None):
+    def lif_step(weights, alpha, beta, state, Sin_t, thresholds, *, use_output_spikes: bool = True, max_num_spikes: Optional[int] = None):
         """Simple implementation of a layer of leaky integrate-and-fire neurons."""
         U, I = state
         fc_weight, fc_bias = weights
-
         U = alpha*U + (1-alpha)*(20.0*I) # I is weighted by a factor of 20
-        I = beta*I + (1-beta) * linear_layer(fc_weight, fc_bias, Sin_t)
-        S_out = gen_spike_fn(U, thresholds, max_num_spikes=max_num_spikes)
+        I = beta*I + (1-beta) * liner_layer_fn(fc_weight, fc_bias, Sin_t)
+        if use_output_spikes:
+            out_val = gen_spike_fn(U, thresholds, max_num_spikes=max_num_spikes)
+        else:
+            out_val = U
         # U = reset_fn(U, S_out) # TODO enable reset
         state_new = LIFDenseNeuronState(U, I)
-        return state_new, S_out
+        return state_new, out_val
     return lif_step
 
 def init_weights(rng: np.random.Generator, dim_in: int, dim_out: int, use_bias: bool):
     """A simple function to initialize the weights of a fully connected layer."""
     lim = (6/(dim_in+dim_out))**0.5
-    weights = rng.uniform(-lim, lim, (dim_out, dim_in))
+    weights = rng.uniform(-lim, lim, (dim_in, dim_out))
     bias = np.zeros(dim_out) if use_bias else None
     return weights, bias
 
@@ -112,23 +133,41 @@ def init_state(shape):
 
 from xla_spike_vector import SparseSpikeVector, AbstractSparseSpikeVector
 
+def check_is_sparse_spikes_type(inp_spikes):
+    is_sparse_spikes_type = False
+    if isinstance(inp_spikes, (SparseSpikeVector, AbstractSparseSpikeVector)):
+        is_sparse_spikes_type = True
+    elif hasattr(inp_spikes, "val"): # in case of tracer # TODO how to do this properly?
+        if isinstance(inp_spikes.val, (SparseSpikeVector, AbstractSparseSpikeVector)):
+            is_sparse_spikes_type = True
+    return is_sparse_spikes_type
+
 def lif_network(weights, thresholds, alphas, betas, initial_state, inp_spikes):
     """
     Function to initialize a stack of LIF layers from given weights matrices etc.
     It also computed the forward pass of the network for given input spikes.
     """
-    use_sparse = isinstance(inp_spikes, (SparseSpikeVector, AbstractSparseSpikeVector))
+    use_sparse = check_is_sparse_spikes_type(inp_spikes)
     lif_step_fn = get_lif_step(use_sparse)
+    print("\nuse_sparse", use_sparse)
+    print()
     def step_fn_lif_network(states, spikes):
         """Performes a forward pass for the entire LIF network."""
         all_states, all_spikes = [], []
-        for params in zip(weights, alphas, betas, states):
-            new_state, spikes = lif_step_fn(*params, spikes, thresholds)
+        for ilay,params in enumerate(zip(weights, alphas, betas, states)):
+            print("\nilay", ilay)
+            use_output_spikes = ilay < len(weights)-1
+            new_state, spikes = lif_step_fn(*params, spikes, thresholds, use_output_spikes=use_output_spikes)
             all_states.append(new_state)
             all_spikes.append(spikes)
         return all_states, all_spikes
-    # TODO we should explain what jax.lax.scan does
-    final_state, out_spikes = jax.lax.scan(step_fn_lif_network, initial_state, inp_spikes)
+    scan_out = jax.lax.scan(step_fn_lif_network, initial_state, inp_spikes)
+    scan_out_types = jax.tree_util.tree_map(lambda x: type(x), scan_out)
+    print("scan_out", scan_out_types)
+    print(len(scan_out))
+
+    final_state, out_spikes = scan_out
+    # sys.exit()
     return final_state, out_spikes
 
 def init_network_weights(rng, dims, use_bias_fc):
@@ -179,7 +218,7 @@ def calc_loss_batch(weights, thresholds, alphas, betas, initial_state, inp_spike
     return loss_vals.sum()
 
 Nc = 2 # Number of classes
-N = [4, 8, Nc] # List of number of neurons per layer
+N = [4, 8, 8, Nc] # List of number of neurons per layer
 T = 100 # Number of timesteps per epoch
 BATCHSIZE = 12
 SEED = 42 
@@ -223,12 +262,18 @@ print(f"inp_spikes_sparse.shape: {inp_spikes_sparse.shape}")
 
 # sys.exit()
 
+print("\nCalculating loss and gradients...")
+print("\nDense:")
 loss_dense, grads_dense = jax.value_and_grad(calc_loss_batch)(weights, thresholds, alphas, betas, initial_state, inp_spikes_dense, targets_one_hot)
+print("\nSparse:")
 loss_sparse, grads_sparse = jax.value_and_grad(calc_loss_batch)(weights, thresholds, alphas, betas, initial_state, inp_spikes_sparse, targets_one_hot)
-sys.exit()
+# sys.exit()
 print(f"Loss dense: {loss_dense:.3f}")
 print(f"Loss sparse: {loss_sparse:.3f}")
 print("\nGradients:")
 import pprint
 pprint.pprint(grads_dense)
 pprint.pprint(grads_sparse)
+# correct_grads = jax.tree_util.tree_map(lambda x,y: , grads_dense, [grads_sparse])
+correct_grads = jax.tree_util.tree_map(lambda x, y: np.allclose(x, y), grads_sparse, grads_dense)
+print("\nCorrect gradients:", correct_grads)
