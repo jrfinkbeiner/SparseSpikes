@@ -6,23 +6,25 @@ import jax
 
 import jax.numpy as jnp
 import jax.random as jrandom
-from xla_gen_spike_vector import get_gen_spike_vector_fn
-from xla_spike_vector_matmul import get_spike_vector_matmul_fn
-# from xla_spike_vector import SparseSpikeVector
+# from xla_gen_spike_vector import get_gen_spike_vector_fn
+# from xla_spike_vector_matmul import get_spike_vector_matmul_fn
+# # from xla_spike_vector import SparseSpikeVector
 
-gen_spike_vector = get_gen_spike_vector_fn(
-    op_name='gen_spike_vector',
-    so_file="../lib/gen_spike_vector_from_dense/libgen_sparse_spikes_gpu.so",
-    fn_name='gen_spike_vector_gpu_f32',
-    platform='gpu',
-)
+# gen_spike_vector = get_gen_spike_vector_fn(
+#     op_name='gen_spike_vector',
+#     so_file="../../lib/gen_spike_vector_from_dense/libgen_sparse_spikes_gpu.so",
+#     fn_name='gen_spike_vector_gpu_f32',
+#     platform='gpu',
+# )
 
-spike_vector_matmul = get_spike_vector_matmul_fn(
-    op_name='spike_vector_matmul',
-    so_file="../lib/spike_vector_matmul/libspike_vector_matmul_gpu.so",
-    fn_name='spike_vector_matmul_gpu_f32',
-    platform='gpu',
-)
+# spike_vector_matmul = get_spike_vector_matmul_fn(
+#     op_name='spike_vector_matmul',
+#     so_file="../../lib/spike_vector_matmul/libspike_vector_matmul_gpu.so",
+#     fn_name='spike_vector_matmul_gpu_f32',
+#     platform='gpu',
+# )
+
+from sparsespikes.jax_interface import SparseSpikeVector, gen_spike_vector, spike_vector_matmul
 
 def get_heaviside_with_super_spike_surrogate(beta=10.):
     @jax.custom_jvp

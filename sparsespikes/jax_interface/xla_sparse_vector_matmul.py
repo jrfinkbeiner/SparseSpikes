@@ -14,7 +14,7 @@ from jax._src.lib import xla_client
 from jax.interpreters import ad
 from jax.interpreters import batching
 
-from interface_utils import create_pycapsule
+from .interface_utils import create_pycapsule
 
 def get_sparse_vector_matmul_fn(op_name: str, so_file: str, fn_name: str, platform: str, spike_vector_grad_fn):
 
@@ -167,6 +167,8 @@ def get_sparse_vector_matmul_fn(op_name: str, so_file: str, fn_name: str, platfo
 
         def calc_spike_vector_grad():
             sparse_vector_grad = ad.Zero(spike_vector.aval) if type(result_t) is ad.Zero else spike_vector_grad_fn(matrix, result_t, spike_vector)
+            print("\ncalc_spike_vector_grad\n")
+            # sys.exit()
             # return sparse_vector_grad
             return sparse_vector_grad
 

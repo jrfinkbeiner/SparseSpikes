@@ -14,7 +14,7 @@ from jax._src.lib import xla_client
 from jax.interpreters import ad
 from jax.interpreters import batching
 
-from interface_utils import create_pycapsule
+from .interface_utils import create_pycapsule
 
 def get_spike_vector_matmul_matrix_grad_fn(op_name: str, so_file: str, fn_name: str, platform: str):
 
@@ -115,11 +115,6 @@ def get_spike_vector_matmul_matrix_grad_fn(op_name: str, so_file: str, fn_name: 
             result_grad = result_grad.ravel().reshape(*result_grad_shape) # TODO make sure this doens't copy if it already is contigous
             return result_grad
 
-        print(spike_vector)
-        print(spike_vector.shape)
-        print(result_grad)
-        print(result_grad.shape)
-        print("batch_axes", batch_axes)
         if batch_axes[0] == 0:
             if batch_axes[1] == None:
                 raise ValueError("Batching over spike_vector but not result_grad is not supported yet.")

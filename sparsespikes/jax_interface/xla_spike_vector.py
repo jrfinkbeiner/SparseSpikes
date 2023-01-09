@@ -1,5 +1,5 @@
 import sys
-from typing import Callable, Optional
+from typing import Callable, Optional, Sequence
 from dataclasses import dataclass
 import numpy as np
 import jax
@@ -305,6 +305,16 @@ class AbstractSparseSpikeVector(core.ShapedArray):
             yield self[i]
 
 
+def check_is_sparse_spikes_type(inp_spikes):
+    is_sparse_spikes_type = False
+    if isinstance(inp_spikes, (SparseSpikeVector, AbstractSparseSpikeVector)):
+        is_sparse_spikes_type = True
+    elif hasattr(inp_spikes, "aval"): # in case of tracer # TODO how to do this properly?
+        if isinstance(inp_spikes.aval, (SparseSpikeVector, AbstractSparseSpikeVector)):
+            is_sparse_spikes_type = True
+    return is_sparse_spikes_type
+
+
 def sparse_spike_vector_result_handler(device, aval):
     def build_sparse_spike_vector(_, comb_spike_data_buf):
         comb_spike_data = device_array.make_device_array(aval.comb_spike_data_aval, device, comb_spike_data_buf)
@@ -349,7 +359,7 @@ def _map_shaped_array(
     size: int, axis: Optional[int], aval: AbstractSparseSpikeVector) -> AbstractSparseSpikeVector:
   assert axis is None or aval.shape[axis] == size
 
-  print("\n_map_shaped_array", aval, size, axis )
+#   print("\n_map_shaped_array", aval, size, axis )
   # print(aval)
   if axis==0:
     assert aval.is_stacked
@@ -362,22 +372,13 @@ def _map_shaped_array(
   else:
     raise NotImplementedError
   return retval
-  
-#   # TODO only possible along stacked dim which is 0
-#   print(axis)
-
-# #   assert axis == 0
-#   if axis is None: 
-#     return aval
-#   return 
 
 def _unmap_shaped_array(
     size: int, axis_name, axis: Optional[int], aval: AbstractSparseSpikeVector
   ) -> AbstractSparseSpikeVector:
   named_shape = dict(aval.named_shape)
-  named_shape.pop(axis_name, None)  # TODO: make this mandatory
-#   print("\nunmap", aval, size, axis, named_shape)
-  print("\n_unmap_shaped_array", aval, size, axis, named_shape)
+  named_shape.pop(axis_name, None)  # TODO: make this mandatory?
+#   print("\n_unmap_shaped_array", aval, size, axis, named_shape)
 
   if axis is None: 
     ret = aval.update(named_shape=named_shape)
@@ -435,14 +436,83 @@ squeeze_p.def_abstract_eval(
 
 from jax._src.ad_util import aval_zeros_likers, jaxval_zeros_likers
 
-def _zeros_like_sparse_spike_vector_aval(aval):
-  return aval.update()
-
-def _zeros_like_sparse_spike_vector_aval(aval):
-  return aval.update()
-
 def _zeros_like_sparse_spike_vector(aval):
   return SparseSpikeVector(comb_spike_data=np.zeros(aval.shape, np.uint32).view(aval.dtype), aval=aval)
 
 aval_zeros_likers[AbstractSparseSpikeVector] = _zeros_like_sparse_spike_vector
 # weak_type
+
+
+# from jax._src.lib.mlir.dialects import mhlo
+
+# def _sparse_spike_vector_constant(x: SparseSpikeVector, canonicalize_types
+#                          ) -> Sequence[ir.Value]:
+# #   print(x)
+#   x = x.comb_spike_data
+# #   sys.exit()
+#   if canonicalize_types:
+#     x = np.asarray(x, dtypes.canonicalize_dtype(x.dtype))
+
+#   element_type = mlir.dtype_to_ir_type(x.dtype)
+#   shape = x.shape
+#   if x.dtype == np.bool_:
+#     nelems = x.size
+#     x = np.packbits(x, bitorder='little')
+#     # TODO(b/209005197): Work around for MLIR crash for non-splat single element
+#     # buffers.
+#     if nelems == 1:
+#       x = np.array(0 if x.item() == 0 else 0xff, np.uint8)
+#   elif x.dtype == dtypes.bfloat16:
+#     x = x.view(np.uint16)
+#   x = np.ascontiguousarray(x)
+#   attr = ir.DenseElementsAttr.get(x, type=element_type, shape=shape)
+#   return (mhlo.ConstantOp(attr).result,)
+
+# def _sparse_spike_vector_constant_handler(val: SparseSpikeVector, canonicalize_types
+#                              ) -> Sequence[ir.Value]:
+#   """Constant handler for ndarray literals, handling zero-size strides.
+
+#   In most cases this function calls _numpy_array_constant(val) except it has
+#   special handling of arrays with any strides of size zero: for those, it
+#   generates appropriate calls to NumpyArrayConstant, Broadcast, and Transpose
+#   to avoid staging in large literals that might arise from np.zeros or np.ones
+#   or the output of lax.broadcast (which uses np.broadcast_to which in turn
+#   uses size-zero strides).
+
+#   Args:
+#     val: an ndarray.
+
+#   Returns:
+#     An XLA ComputationDataHandle / XlaOp representing the constant ndarray
+#     staged into the XLA Computation.
+#   """
+#   if dtypes.result_type(val) == dtypes.float0:
+#     raise NotImplementedError("float0")
+#     return _numpy_array_constant(np.zeros(val.shape, dtype=np.bool_),
+#                                 canonicalize_types=False)
+# #   elif np.any(np.equal(0, val.strides)) and val.size > 0:
+# #     raise NotImplementedError("zero strides")
+#     # zero_stride_axes, = np.where(np.equal(0, val.strides))
+#     # other_axes, = np.where(np.not_equal(0, val.strides))
+#     # collapsed_val = val[tuple(0 if ax in zero_stride_axes else slice(None) # type: ignore
+#     #                           for ax in range(val.ndim))]  # type: ignore
+#     # if canonicalize_types:
+#     #   collapsed_val = np.asarray(
+#     #       collapsed_val, dtypes.canonicalize_dtype(collapsed_val.dtype))
+#     # out = mhlo.BroadcastInDimOp(
+#     #     ir.RankedTensorType.get(
+#     #         val.shape, dtype_to_ir_type(collapsed_val.dtype)),
+#     #     _numpy_array_constant(collapsed_val, canonicalize_types=False)[0],
+#     #     dense_int_elements(other_axes)).result
+#     # return (out,)
+#   else:
+#     return _sparse_spike_vector_constant(val, canonicalize_types)
+
+
+# necessary for constant type handler (e.g. see zeros above)
+# TODO works for now... in the future more sophisticated implementation might be necessary (see code above)
+def _sparse_spike_vector_constant_handler(val: SparseSpikeVector, canonicalize_types
+                             ) -> Sequence[ir.Value]:
+    return mlir._ndarray_constant_handler(val.comb_spike_data, canonicalize_types)
+
+mlir.register_constant_handler(SparseSpikeVector, _sparse_spike_vector_constant_handler)

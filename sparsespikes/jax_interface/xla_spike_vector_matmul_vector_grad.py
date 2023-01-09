@@ -14,7 +14,7 @@ from jax._src.lib import xla_client
 from jax.interpreters import ad
 from jax.interpreters import batching
 
-from interface_utils import create_pycapsule
+from .interface_utils import create_pycapsule
 
 def get_spike_vector_matmul_vector_grad_fn(op_name: str, so_file: str, fn_name: str, platform: str):
 

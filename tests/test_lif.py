@@ -7,23 +7,25 @@ import jax
 
 import jax.numpy as jnp
 import jax.random as jrandom
-from xla_gen_spike_vector import get_gen_spike_vector_fn
-from xla_spike_vector_matmul import get_spike_vector_matmul_fn
-from xla_spike_vector import SparseSpikeVector
+# from xla_gen_spike_vector import get_gen_spike_vector_fn
+# from xla_spike_vector_matmul import get_spike_vector_matmul_fn
+# from xla_spike_vector import SparseSpikeVector
 
-gen_spike_vector = get_gen_spike_vector_fn(
-    op_name='gen_spike_vector',
-    so_file="../lib/gen_spike_vector_from_dense/libgen_sparse_spikes_gpu.so",
-    fn_name='gen_spike_vector_gpu_f32',
-    platform='gpu',
-)
+# gen_spike_vector = get_gen_spike_vector_fn(
+#     op_name='gen_spike_vector',
+#     so_file="../../lib/gen_spike_vector_from_dense/libgen_sparse_spikes_gpu.so",
+#     fn_name='gen_spike_vector_gpu_f32',
+#     platform='gpu',
+# )
 
-spike_vector_matmul = get_spike_vector_matmul_fn(
-    op_name='spike_vector_matmul',
-    so_file="../lib/spike_vector_matmul/libspike_vector_matmul_gpu.so",
-    fn_name='spike_vector_matmul_gpu_f32',
-    platform='gpu',
-)
+# spike_vector_matmul = get_spike_vector_matmul_fn(
+#     op_name='spike_vector_matmul',
+#     so_file="../../lib/spike_vector_matmul/libspike_vector_matmul_gpu.so",
+#     fn_name='spike_vector_matmul_gpu_f32',
+#     platform='gpu',
+# )
+
+from sparsespikes.jax_interface import SparseSpikeVector, check_is_sparse_spikes_type, gen_spike_vector, spike_vector_matmul
 
 def get_heaviside_with_super_spike_surrogate(beta=10.):
     @jax.custom_jvp
@@ -77,33 +79,37 @@ def linear_layer(weights, bias, inp):
 def linear_layer_dense(weights, bias, inp):
     """Simple implementation of a fully connected layer."""
     ret_val = inp @ weights
-    print(weights.shape, inp.shape)
-    print(ret_val.shape)
     if bias is not None:
         ret_val += bias 
     return ret_val
 
 def linear_layer_sparse(weights, bias, inp):
     """Simple implementation of a fully connected layer."""
-    print(weights.shape, inp.shape)
     ret_val = spike_vector_matmul(weights, inp)
-    print(ret_val.shape)
     if bias is not None:
         ret_val += bias 
     return ret_val
 
-def dense_reset(state, out_spikes):
+def reset_with_dense_spikes(state, out_spikes):
     return state * jax.lax.stop_gradient(1-out_spikes)
 
-def sparse_reset(state, out_spikes):
-    raise NotImplementedError("Sparse reset not implemented yet.")
-    return state * jax.lax.stop_gradient(1-out_spikes)
+def reset_from_state(state, thresholds):
+    return state * jax.lax.stop_gradient(1-jnp.heaviside(state-thresholds[0], 0))
+
+def get_reset_fn(use_sparse: bool):
+    def reset_fn(state, thresholds, out_spikes):
+        if use_sparse:
+            # TODO use sparse reset
+            return reset_from_state(state, thresholds)
+        else:
+            return reset_with_dense_spikes(state, out_spikes)
+    return reset_fn
 
 def get_lif_step(use_sparse: bool):
     """Function to return the correct LIF step function."""
-    # reset_fn = sparse_reset if use_sparse else dense_reset
-    gen_spike_fn = get_gen_spike_fn(use_sparse)
     liner_layer_fn = linear_layer_sparse if use_sparse else linear_layer_dense
+    gen_spike_fn = get_gen_spike_fn(use_sparse)
+    reset_fn = get_reset_fn(use_sparse)
 
     def lif_step(weights, alpha, beta, state, Sin_t, thresholds, *, use_output_spikes: bool = True, max_num_spikes: Optional[int] = None):
         """Simple implementation of a layer of leaky integrate-and-fire neurons."""
@@ -113,9 +119,9 @@ def get_lif_step(use_sparse: bool):
         I = beta*I + (1-beta) * liner_layer_fn(fc_weight, fc_bias, Sin_t)
         if use_output_spikes:
             out_val = gen_spike_fn(U, thresholds, max_num_spikes=max_num_spikes)
+            U = reset_fn(U, thresholds, out_val)
         else:
             out_val = U
-        # U = reset_fn(U, S_out) # TODO enable reset
         state_new = LIFDenseNeuronState(U, I)
         return state_new, out_val
     return lif_step
@@ -130,17 +136,6 @@ def init_weights(rng: np.random.Generator, dim_in: int, dim_out: int, use_bias: 
 def init_state(shape):
     """Function to initialize the state variables of our LIF layer."""
     return LIFDenseNeuronState(*[np.zeros(shape) for _ in range(2)])
-
-from xla_spike_vector import SparseSpikeVector, AbstractSparseSpikeVector
-
-def check_is_sparse_spikes_type(inp_spikes):
-    is_sparse_spikes_type = False
-    if isinstance(inp_spikes, (SparseSpikeVector, AbstractSparseSpikeVector)):
-        is_sparse_spikes_type = True
-    elif hasattr(inp_spikes, "val"): # in case of tracer # TODO how to do this properly?
-        if isinstance(inp_spikes.val, (SparseSpikeVector, AbstractSparseSpikeVector)):
-            is_sparse_spikes_type = True
-    return is_sparse_spikes_type
 
 def lif_network(weights, thresholds, alphas, betas, initial_state, inp_spikes):
     """
@@ -161,13 +156,7 @@ def lif_network(weights, thresholds, alphas, betas, initial_state, inp_spikes):
             all_states.append(new_state)
             all_spikes.append(spikes)
         return all_states, all_spikes
-    scan_out = jax.lax.scan(step_fn_lif_network, initial_state, inp_spikes)
-    scan_out_types = jax.tree_util.tree_map(lambda x: type(x), scan_out)
-    print("scan_out", scan_out_types)
-    print(len(scan_out))
-
-    final_state, out_spikes = scan_out
-    # sys.exit()
+    final_state, out_spikes = jax.lax.scan(step_fn_lif_network, initial_state, inp_spikes)
     return final_state, out_spikes
 
 def init_network_weights(rng, dims, use_bias_fc):
@@ -217,63 +206,72 @@ def calc_loss_batch(weights, thresholds, alphas, betas, initial_state, inp_spike
         weights, thresholds, alphas, betas, initial_state, inp_spikes, labels)
     return loss_vals.sum()
 
-Nc = 2 # Number of classes
-N = [4, 8, 8, Nc] # List of number of neurons per layer
-T = 100 # Number of timesteps per epoch
-BATCHSIZE = 12
-SEED = 42 
 
-rng = np.random.default_rng(SEED)
-keys = jrandom.split(jrandom.PRNGKey(rng.integers(999999)), 2)
-weights = init_network_weights(rng, N, False)
-NUM_LAYERS = len(N)-1
-alphas, betas = [0.95]*NUM_LAYERS, [0.9]*NUM_LAYERS
+def main():
+    Nc = 2 # Number of classes
+    N = [4, 8, Nc] # List of number of neurons per layer
+    T = 5 # Number of timesteps per epoch
+    BATCHSIZE = 12
+    SEED = 42 
 
+    rng = np.random.default_rng(SEED)
+    keys = jrandom.split(jrandom.PRNGKey(rng.integers(999999)), 2)
+    weights = init_network_weights(rng, N, False)
+    NUM_LAYERS = len(N)-1
+    alphas, betas = [0.95]*NUM_LAYERS, [0.9]*NUM_LAYERS
 
-initial_state = init_network_states(BATCHSIZE, N[1:])
-target = rng.integers(0, Nc, size=(BATCHSIZE,))
-targets_one_hot = create_one_hot(target, Nc, dtype=jnp.float32)
+    initial_state = init_network_states(BATCHSIZE, N[1:])
+    target = rng.integers(0, Nc, size=(BATCHSIZE,))
+    targets_one_hot = create_one_hot(target, Nc, dtype=jnp.float32)
 
-inp_states = jrandom.uniform(keys[0], (T, BATCHSIZE, N[0]), dtype=jnp.float32)*1.5
-thresholds = jnp.asarray([1.0, 0.5], dtype=jnp.float32)
-inp_spikes_dense = jnp.asarray(inp_states > thresholds[0], dtype=jnp.float32)
-inp_spikes_sparse_list = [gen_spike_vector(inp_stat, thresholds, max_num_spikes=N[0]) for inp_stat in inp_states] 
+    inp_states = jrandom.uniform(keys[0], (T, BATCHSIZE, N[0]), dtype=jnp.float32)*1.5
+    thresholds = jnp.asarray([1.0, 0.5], dtype=jnp.float32)
+    inp_spikes_dense = jnp.asarray(inp_states > thresholds[0], dtype=jnp.float32)
+    inp_spikes_sparse_list = [gen_spike_vector(inp_stat, thresholds, max_num_spikes=N[0]) for inp_stat in inp_states] 
 
-def stack_sparse_spike_vectors(sparse_spike_vectors: List[SparseSpikeVector]):
-    """Stacks the sparse spike vectors into a SparseSpikeVector instance."""
-    comb_spike_data = jnp.stack([spike_vec.comb_spike_data for spike_vec in sparse_spike_vectors], axis=0)
-    stacked_aval = sparse_spike_vectors[0].aval.update(stack_size=len(sparse_spike_vectors))
-    return SparseSpikeVector(comb_spike_data=comb_spike_data, aval=stacked_aval)
+    def stack_sparse_spike_vectors(sparse_spike_vectors: List[SparseSpikeVector]):
+        """Stacks the sparse spike vectors into a SparseSpikeVector instance."""
+        comb_spike_data = jnp.stack([spike_vec.comb_spike_data for spike_vec in sparse_spike_vectors], axis=0)
+        stacked_aval = sparse_spike_vectors[0].aval.update(stack_size=len(sparse_spike_vectors))
+        return SparseSpikeVector(comb_spike_data=comb_spike_data, aval=stacked_aval)
 
-# print(inp_spikes_sparse.shape)
-print(f"inp_spikes_dense.shape: {inp_spikes_dense.shape}")
-print(f"inp_spikes_sparse.shape: {inp_spikes_sparse_list[0].shape}")
-inp_spikes_sparse = stack_sparse_spike_vectors(inp_spikes_sparse_list)
-# inp_spikes_sparse = jax.vmap(ft.partial(gen_spike_vector, max_num_spikes=N[0]), in_axes=(0,None))(inp_states, thresholds)
-print(f"inp_spikes_sparse.shape: {inp_spikes_sparse.shape}")
-
-
-# print(inp_spikes_sparse_list[0])
-# print(inp_spikes_sparse[0])
-# print()
-# print(inp_spikes_sparse_list[10])
-# print(inp_spikes_sparse[10])
+    # print(inp_spikes_sparse.shape)
+    print(f"inp_spikes_dense.shape: {inp_spikes_dense.shape}")
+    print(f"inp_spikes_sparse.shape: {inp_spikes_sparse_list[0].shape}")
+    inp_spikes_sparse = stack_sparse_spike_vectors(inp_spikes_sparse_list)
+    # inp_spikes_sparse = jax.vmap(ft.partial(gen_spike_vector, max_num_spikes=N[0]), in_axes=(0,None))(inp_states, thresholds)
+    print(f"inp_spikes_sparse.shape: {inp_spikes_sparse.shape}")
 
 
-# sys.exit()
 
-print("\nCalculating loss and gradients...")
-print("\nDense:")
-loss_dense, grads_dense = jax.value_and_grad(calc_loss_batch)(weights, thresholds, alphas, betas, initial_state, inp_spikes_dense, targets_one_hot)
-print("\nSparse:")
-loss_sparse, grads_sparse = jax.value_and_grad(calc_loss_batch)(weights, thresholds, alphas, betas, initial_state, inp_spikes_sparse, targets_one_hot)
-# sys.exit()
-print(f"Loss dense: {loss_dense:.3f}")
-print(f"Loss sparse: {loss_sparse:.3f}")
-print("\nGradients:")
-import pprint
-pprint.pprint(grads_dense)
-pprint.pprint(grads_sparse)
-# correct_grads = jax.tree_util.tree_map(lambda x,y: , grads_dense, [grads_sparse])
-correct_grads = jax.tree_util.tree_map(lambda x, y: np.allclose(x, y), grads_sparse, grads_dense)
-print("\nCorrect gradients:", correct_grads)
+    # jaxpr_dense = jax.make_jaxpr(calc_loss_batch)(weights, thresholds, alphas, betas, initial_state, inp_spikes_dense, targets_one_hot)
+    # with open("jaxpr_dense.txt", "w") as f:
+    #     f.write(str(jaxpr_dense))
+
+    # jaxpr_sparse = jax.make_jaxpr(calc_loss_batch)(weights, thresholds, alphas, betas, initial_state, inp_spikes_sparse, targets_one_hot)
+    # with open("jaxpr_sparse.txt", "w") as f:
+    #     f.write(str(jaxpr_sparse))
+    # sys.exit()
+
+
+    print("\nCalculating loss and gradients...")
+    print("\nDense:")
+    loss_dense, grads_dense = jax.jit(jax.value_and_grad(calc_loss_batch))(weights, thresholds, alphas, betas, initial_state, inp_spikes_dense, targets_one_hot)
+    print("\nSparse:")
+    loss_sparse, grads_sparse = jax.jit(jax.value_and_grad(calc_loss_batch))(weights, thresholds, alphas, betas, initial_state, inp_spikes_sparse, targets_one_hot)
+    # print("\nSparse 2:")
+    # loss_sparse, grads_sparse = jax.value_and_grad(calc_loss_batch)(weights, thresholds, alphas, betas, initial_state, inp_spikes_sparse, targets_one_hot)
+
+    # sys.exit()
+    print(f"Loss dense: {loss_dense:.3f}")
+    print(f"Loss sparse: {loss_sparse:.3f}")
+    print("\nGradients:")
+    import pprint
+    pprint.pprint(grads_dense)
+    pprint.pprint(grads_sparse)
+    # correct_grads = jax.tree_util.tree_map(lambda x,y: , grads_dense, [grads_sparse])
+    correct_grads = jax.tree_util.tree_map(lambda x, y: np.allclose(x, y), grads_sparse, grads_dense)
+    print("\nCorrect gradients:", correct_grads)
+
+if __name__ == "__main__":
+    main()

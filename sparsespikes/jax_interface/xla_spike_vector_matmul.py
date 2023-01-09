@@ -14,11 +14,11 @@ from jax._src.lib import xla_client
 from jax.interpreters import ad
 from jax.interpreters import batching
 
-from interface_utils import create_pycapsule
-from xla_spike_vector import AbstractSparseSpikeVector
-from xla_spike_vector_matmul_matrix_grad import get_spike_vector_matmul_matrix_grad_fn
-from xla_spike_vector_matmul_vector_grad import get_spike_vector_matmul_vector_grad_fn
-from xla_sparse_vector_matmul import get_sparse_vector_matmul_fn
+from .interface_utils import create_pycapsule
+from .xla_spike_vector import AbstractSparseSpikeVector
+from .xla_spike_vector_matmul_matrix_grad import get_spike_vector_matmul_matrix_grad_fn
+from .xla_spike_vector_matmul_vector_grad import get_spike_vector_matmul_vector_grad_fn
+from .xla_sparse_vector_matmul import get_sparse_vector_matmul_fn
 
 # from jax.lib import xla_client
 # xla_client.register_custom_call_target(b"cpu_add", cpu_add_fn)

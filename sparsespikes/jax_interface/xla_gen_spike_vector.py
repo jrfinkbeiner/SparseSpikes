@@ -14,12 +14,12 @@ from jax._src.lib import xla_client
 from jax.interpreters import ad
 from jax.interpreters import batching
 
-from interface_utils import create_pycapsule
-from xla_spike_vector import AbstractSparseSpikeVector
+from .interface_utils import create_pycapsule
+from .xla_spike_vector import AbstractSparseSpikeVector
 # from jax.lib import xla_client
 # xla_client.register_custom_call_target(b"cpu_add", cpu_add_fn)
 
-from xla_gen_spike_vector_grad import get_gen_spike_vector_grad_fn
+from .xla_gen_spike_vector_grad import get_gen_spike_vector_grad_fn
 
 # Helpful links:
 # https://jax.readthedocs.io/en/latest/notebooks/How_JAX_primitives_work.html

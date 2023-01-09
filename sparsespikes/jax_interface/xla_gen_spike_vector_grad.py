@@ -14,8 +14,8 @@ from jax._src.lib import xla_client
 from jax.interpreters import ad
 from jax.interpreters import batching
 
-from interface_utils import create_pycapsule
-from xla_spike_vector import AbstractSparseSpikeVector
+from .interface_utils import create_pycapsule
+from .xla_spike_vector import AbstractSparseSpikeVector
 # from jax.lib import xla_client
 # xla_client.register_custom_call_target(b"cpu_add", cpu_add_fn)
 
