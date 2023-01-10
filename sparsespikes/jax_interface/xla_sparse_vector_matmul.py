@@ -167,7 +167,7 @@ def get_sparse_vector_matmul_fn(op_name: str, so_file: str, fn_name: str, platfo
 
         def calc_spike_vector_grad():
             sparse_vector_grad = ad.Zero(spike_vector.aval) if type(result_t) is ad.Zero else spike_vector_grad_fn(matrix, result_t, spike_vector)
-            print("\ncalc_spike_vector_grad\n")
+            # print("\ncalc_spike_vector_grad\n")
             # sys.exit()
             # return sparse_vector_grad
             return sparse_vector_grad
@@ -201,7 +201,6 @@ def get_sparse_vector_matmul_fn(op_name: str, so_file: str, fn_name: str, platfo
         Returns:
             a tuple of the result, and the result axis that was batched. 
         """
-        print(batch_axes)
         if batch_axes[0] != None:
             raise ValueError("Batching over matrix is not supported yet.")
         if batch_axes[1] != 0:

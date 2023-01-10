@@ -32,7 +32,7 @@ void spike_vector_matmul_gpu_f32(cudaStream_t stream, void** buffers,
   const unsigned long max_num_spikes = sizes[2];
   const unsigned long use_grad_spikes = sizes[3];
 
-  printf("spike_vector_matmul_gpu_f32\n");
+  // printf("spike_vector_matmul_gpu_f32\n");
   // printf("batchsize: %lu\n", batchsize);
   // printf("num_cols: %lu\n", num_cols);
   // printf("max_num_spikes: %lu\n", max_num_spikes);
@@ -62,7 +62,7 @@ void spike_vector_matmul_gpu_f32_matrix_grad(cudaStream_t stream, void** buffers
   const unsigned long batchsize = sizes[2];
   const unsigned long max_num_spikes = sizes[3];
 
-  printf("spike_vector_matmul_gpu_f32_matrix_grad\n");
+  // printf("spike_vector_matmul_gpu_f32_matrix_grad\n");
   // printf("num_rows: %lu\n", num_rows);
   // printf("num_cols: %lu\n", num_cols);
   // printf("batchsize: %lu\n", batchsize);
@@ -94,7 +94,7 @@ void spike_vector_matmul_gpu_f32_spikes_grad(cudaStream_t stream, void** buffers
   const unsigned long batchsize = sizes[1];
   const unsigned long max_num_spikes = sizes[2];
 
-  printf("spike_vector_matmul_gpu_f32_spikes_grad\n");
+  // printf("spike_vector_matmul_gpu_f32_spikes_grad\n");
   // printf("num_cols: %lu\n", num_cols);
   // printf("batchsize: %lu\n", batchsize);
   // printf("max_num_spikes: %lu\n", max_num_spikes);
@@ -140,7 +140,7 @@ void sparse_vector_matmul_gpu_f32(cudaStream_t stream, void** buffers,
   const unsigned long max_num_spikes = sizes[2];
   const unsigned long use_grad_spikes = sizes[3];
 
-  printf("sparse_vector_matmul_gpu_f32\n");
+  // printf("sparse_vector_matmul_gpu_f32\n");
   // printf("batchsize: %lu\n", batchsize);
   // printf("num_cols: %lu\n", num_cols);
   // printf("max_num_spikes: %lu\n", max_num_spikes);
@@ -156,5 +156,5 @@ void sparse_vector_matmul_gpu_f32(cudaStream_t stream, void** buffers,
   dim3 grid_dim(batchsize);
   dim3 block_dim(256);
 
-  // sparse_vals_vector_matmul_gpu<<<grid_dim,block_dim,2*max_num_spikes*sizeof(unsigned int),stream>>>(matrix, vals, spike_ids, num_spikes, result_vector, batchsize, num_cols, max_num_spikes);
+  sparse_vals_vector_matmul_gpu<<<grid_dim,block_dim,2*max_num_spikes*sizeof(unsigned int),stream>>>(matrix, vals, spike_ids, num_spikes, result_vector, batchsize, num_cols, max_num_spikes);
 }

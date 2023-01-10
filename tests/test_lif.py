@@ -7,23 +7,6 @@ import jax
 
 import jax.numpy as jnp
 import jax.random as jrandom
-# from xla_gen_spike_vector import get_gen_spike_vector_fn
-# from xla_spike_vector_matmul import get_spike_vector_matmul_fn
-# from xla_spike_vector import SparseSpikeVector
-
-# gen_spike_vector = get_gen_spike_vector_fn(
-#     op_name='gen_spike_vector',
-#     so_file="../../lib/gen_spike_vector_from_dense/libgen_sparse_spikes_gpu.so",
-#     fn_name='gen_spike_vector_gpu_f32',
-#     platform='gpu',
-# )
-
-# spike_vector_matmul = get_spike_vector_matmul_fn(
-#     op_name='spike_vector_matmul',
-#     so_file="../../lib/spike_vector_matmul/libspike_vector_matmul_gpu.so",
-#     fn_name='spike_vector_matmul_gpu_f32',
-#     platform='gpu',
-# )
 
 from sparsespikes.jax_interface import SparseSpikeVector, check_is_sparse_spikes_type, gen_spike_vector, spike_vector_matmul
 
@@ -145,14 +128,13 @@ def lif_network(weights, thresholds, alphas, betas, initial_state, inp_spikes):
     use_sparse = check_is_sparse_spikes_type(inp_spikes)
     lif_step_fn = get_lif_step(use_sparse)
     print("\nuse_sparse", use_sparse)
-    print()
     def step_fn_lif_network(states, spikes):
         """Performes a forward pass for the entire LIF network."""
         all_states, all_spikes = [], []
         for ilay,params in enumerate(zip(weights, alphas, betas, states)):
             print("\nilay", ilay)
             use_output_spikes = ilay < len(weights)-1
-            new_state, spikes = lif_step_fn(*params, spikes, thresholds, use_output_spikes=use_output_spikes)
+            new_state, spikes = lif_step_fn(*params, spikes, thresholds, use_output_spikes=use_output_spikes, max_num_spikes=8)
             all_states.append(new_state)
             all_spikes.append(spikes)
         return all_states, all_spikes
@@ -207,11 +189,21 @@ def calc_loss_batch(weights, thresholds, alphas, betas, initial_state, inp_spike
     return loss_vals.sum()
 
 
+import time
+def test_fn_scan(fn, *args, **kwargs):
+    res = fn(*args, **kwargs)
+    jax.block_until_ready(res)
+    start = time.time()
+    res = fn(*args, **kwargs)
+    jax.block_until_ready(res)
+    end = time.time()
+    return end - start
+
 def main():
-    Nc = 2 # Number of classes
-    N = [4, 8, Nc] # List of number of neurons per layer
-    T = 5 # Number of timesteps per epoch
-    BATCHSIZE = 12
+    Nc = 10 # Number of classes
+    N = [1024*16, 1024*16, Nc] # List of number of neurons per layer
+    T = 100 # Number of timesteps per epoch
+    BATCHSIZE = 48
     SEED = 42 
 
     rng = np.random.default_rng(SEED)
@@ -259,6 +251,7 @@ def main():
     loss_dense, grads_dense = jax.jit(jax.value_and_grad(calc_loss_batch))(weights, thresholds, alphas, betas, initial_state, inp_spikes_dense, targets_one_hot)
     print("\nSparse:")
     loss_sparse, grads_sparse = jax.jit(jax.value_and_grad(calc_loss_batch))(weights, thresholds, alphas, betas, initial_state, inp_spikes_sparse, targets_one_hot)
+    # loss_sparse, grads_sparse = jax.value_and_grad(calc_loss_batch)(weights, thresholds, alphas, betas, initial_state, inp_spikes_sparse, targets_one_hot)
     # print("\nSparse 2:")
     # loss_sparse, grads_sparse = jax.value_and_grad(calc_loss_batch)(weights, thresholds, alphas, betas, initial_state, inp_spikes_sparse, targets_one_hot)
 
@@ -272,6 +265,20 @@ def main():
     # correct_grads = jax.tree_util.tree_map(lambda x,y: , grads_dense, [grads_sparse])
     correct_grads = jax.tree_util.tree_map(lambda x, y: np.allclose(x, y), grads_sparse, grads_dense)
     print("\nCorrect gradients:", correct_grads)
+
+    dense_time = test_fn_scan(jax.jit(jax.value_and_grad(calc_loss_batch)), weights, thresholds, alphas, betas, initial_state, inp_spikes_dense, targets_one_hot)
+    sparse_time = test_fn_scan(jax.jit(jax.value_and_grad(calc_loss_batch)), weights, thresholds, alphas, betas, initial_state, inp_spikes_sparse, targets_one_hot)    
+
+    print(dense_time/sparse_time)
+    print(dense_time)
+    print(sparse_time)
+
+
+    print("mean activity", inp_spikes_dense.mean())
+
+
+
+
 
 if __name__ == "__main__":
     main()
