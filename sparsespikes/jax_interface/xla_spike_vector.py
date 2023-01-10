@@ -516,3 +516,138 @@ def _sparse_spike_vector_constant_handler(val: SparseSpikeVector, canonicalize_t
     return mlir._ndarray_constant_handler(val.comb_spike_data, canonicalize_types)
 
 mlir.register_constant_handler(SparseSpikeVector, _sparse_spike_vector_constant_handler)
+
+
+
+from jax._src.typing import ArrayLike
+from jax.interpreters import pxla, xla, mlir
+from jax._src.sharding import (
+    Sharding, SingleDeviceSharding, XLACompatibleSharding, PmapSharding,
+    device_replica_id_map)
+from jax._src.array import ArrayImpl, _array_shard_arg, _array_global_result_handler, _array_local_result_handler
+
+
+# def _array_pmap_shard_arg(x, devices, indices, mode):
+#   if dispatch.is_single_device_sharding(x.sharding):
+#     return pxla._shard_device_array(x, devices, indices, mode)
+
+#   # If the sharding of Array does not match pmap's sharding then take the slow
+#   # path which is similar to what SDA does. This slow path reroute only happens
+#   # for `pmap`.
+#   x_indices = tuple(x.sharding.addressable_devices_indices_map(x.shape).values())
+#   if indices == x_indices:
+#     return [buf if buf.device() == d else buf.copy_to_device(d)
+#             for buf, d in safe_zip(x._arrays, devices)]
+#   else:
+#     return pxla._shard_sharded_device_array_slow_path(x, devices, indices, mode)
+
+
+# def _array_rest_shard_arg(x: ArrayImpl, devices, indices, mode):
+#   x_indices = x.sharding.addressable_devices_indices_map(x.shape).values()
+#   if not x.is_fully_addressable:
+#     if tuple(x_indices) == tuple(indices):
+#       return x._arrays
+#     else:
+#       return NotImplementedError("Cannot reshard an input that is not fully "
+#                                  "addressable")
+#   else:
+#     if tuple(x_indices) == tuple(indices):
+#       return [buf if buf.device() == d else buf.copy_to_device(d)
+#               for buf, d in safe_zip(x._arrays, devices)]
+#     # Resharding starts here:
+#     if isinstance(x.sharding, PmapSharding):
+#       return pxla.device_put(x._value, devices, replicate=True)
+#     if dispatch.is_single_device_sharding(x.sharding):
+#       return pxla._shard_device_array(x, devices, indices, mode)
+#     else:
+#       return pxla._shard_sharded_device_array_slow_path(x, devices, indices, mode)
+
+
+# def _array_shard_arg(x, devices, indices, mode):
+#   x._check_if_deleted()
+#   if mode == pxla.InputsHandlerMode.pmap:
+#     return _array_pmap_shard_arg(x, devices, indices, mode)
+#   else:
+#     return _array_rest_shard_arg(x, devices, indices, mode)
+
+def _sparse_spike_vector_shard_arg(x, devices, indices, mode):
+    if len(devices) > 1:
+        raise NotImplementedError("Sharding `SparseSpikeVector` to multiple devices is not supported yet.")
+    
+    # print("_sparse_spike_vector_shard_arg")
+    # print("x", x)
+    # print("devices", devices)
+    # print("indices", indices)
+    # print("mode", mode)
+    # sys.exit()
+    # TODO just a quick fix, might break stuff in case of sharding across last dim
+    comb_spike_data_shard = _array_shard_arg(x.comb_spike_data, devices, indices, mode)
+    # # print(comb_spike_data_shard)
+    # if len(comb_spike_data_shard) > 1:
+    #     raise NotImplementedError
+
+    # out = SparseSpikeVector(comb_spike_data=comb_spike_data_shard[0], aval=x.aval)
+    # # print("\n########## DONE _sparse_spike_vector_shard_arg ############")
+    # # print(comb_spike_data_shard[0].flatten()[:20])
+    # # print(comb_spike_data_shard[0].aval)
+    # # print()
+    # return [out]
+    return comb_spike_data_shard
+
+pxla.shard_arg_handlers[SparseSpikeVector] = _sparse_spike_vector_shard_arg
+
+
+# def _array_global_result_handler(global_aval, out_sharding, committed,
+#                                  is_out_sharding_from_xla):
+#   if global_aval.dtype == dtypes.float0:
+#     return lambda _: np.zeros(global_aval.shape, dtypes.float0)  # type: ignore
+#   if core.is_opaque_dtype(global_aval.dtype):
+#     return global_aval.dtype._rules.global_sharded_result_handler(
+#         global_aval, out_sharding, committed, is_out_sharding_from_xla)
+#   return lambda bufs: ArrayImpl(global_aval, out_sharding, bufs,
+#                                 committed=committed, _skip_checks=True)
+    
+
+def _sparse_spike_vector_global_result_handler(global_aval, out_sharding, committed,
+                                 is_out_sharding_from_xla):
+    array_result_handler = _array_global_result_handler(global_aval.comb_spike_data_aval, out_sharding, committed,
+                                 is_out_sharding_from_xla)
+    def _global_result_handler(bufs):
+        array_impl = array_result_handler(bufs)
+        return SparseSpikeVector(comb_spike_data=array_impl, aval=global_aval)
+    return _global_result_handler
+#   if global_aval.dtype == dtypes.float0:
+#     return lambda _: np.zeros(global_aval.shape, dtypes.float0)  # type: ignore
+#   if core.is_opaque_dtype(global_aval.dtype):
+#     return global_aval.dtype._rules.global_sharded_result_handler(
+#         global_aval, out_sharding, committed, is_out_sharding_from_xla)
+#   return lambda bufs: ArrayImpl(global_aval, out_sharding, bufs,
+#                                 committed=committed, _skip_checks=True)
+    
+
+# pxla
+
+pxla.global_result_handlers[(AbstractSparseSpikeVector, pxla.OutputType.Array)] = _sparse_spike_vector_global_result_handler
+# pxla.global_result_handlers[(core.ConcreteArray, pxla.OutputType.Array)] = _array_global_result_handler
+# pxla.global_result_handlers[(core.AbstractToken, pxla.OutputType.Array)] = lambda *_: lambda *_: core.token
+
+
+# Only used for Arrays that come out of pmap.
+def _array_local_result_handler(aval, sharding, indices):
+  if core.is_opaque_dtype(aval.dtype):
+    return aval.dtype._rules.local_sharded_result_handler(
+        aval, sharding, indices)
+  return lambda bufs: ArrayImpl(aval, sharding, bufs, committed=True,
+                                _skip_checks=True)
+
+# _array_local_result_handler
+
+def _sparse_spike_vector_local_result_handler(aval, sharding, indices):
+    array_result_handler = _array_local_result_handler(aval.comb_spike_data_aval, sharding, indices)
+    def _local_result_handler(bufs):
+        array_impl = array_result_handler(bufs)
+        return SparseSpikeVector(comb_spike_data=array_impl, aval=aval)
+    return _local_result_handler
+
+pxla.local_result_handlers[(core.ShapedArray, pxla.OutputType.Array)] = _sparse_spike_vector_local_result_handler
+# pxla.local_result_handlers[(core.ConcreteArray, pxla.OutputType.Array)] = _array_local_result_handler

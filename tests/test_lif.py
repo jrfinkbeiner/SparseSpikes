@@ -134,7 +134,7 @@ def lif_network(weights, thresholds, alphas, betas, initial_state, inp_spikes):
         for ilay,params in enumerate(zip(weights, alphas, betas, states)):
             print("\nilay", ilay)
             use_output_spikes = ilay < len(weights)-1
-            new_state, spikes = lif_step_fn(*params, spikes, thresholds, use_output_spikes=use_output_spikes, max_num_spikes=8)
+            new_state, spikes = lif_step_fn(*params, spikes, thresholds, use_output_spikes=use_output_spikes) #, max_num_spikes=8)
             all_states.append(new_state)
             all_spikes.append(spikes)
         return all_states, all_spikes
@@ -200,9 +200,9 @@ def test_fn_scan(fn, *args, **kwargs):
     return end - start
 
 def main():
-    Nc = 10 # Number of classes
-    N = [1024*16, 1024*16, Nc] # List of number of neurons per layer
-    T = 100 # Number of timesteps per epoch
+    Nc = 2 # Number of classes
+    N = [32, 16, 8, Nc] # List of number of neurons per layer
+    T = 20 # Number of timesteps per epoch
     BATCHSIZE = 48
     SEED = 42 
 
@@ -266,6 +266,8 @@ def main():
     correct_grads = jax.tree_util.tree_map(lambda x, y: np.allclose(x, y), grads_sparse, grads_dense)
     print("\nCorrect gradients:", correct_grads)
 
+
+    sys.exit()
     dense_time = test_fn_scan(jax.jit(jax.value_and_grad(calc_loss_batch)), weights, thresholds, alphas, betas, initial_state, inp_spikes_dense, targets_one_hot)
     sparse_time = test_fn_scan(jax.jit(jax.value_and_grad(calc_loss_batch)), weights, thresholds, alphas, betas, initial_state, inp_spikes_sparse, targets_one_hot)    
 

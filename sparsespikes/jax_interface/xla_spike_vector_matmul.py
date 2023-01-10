@@ -9,16 +9,16 @@ import jax.numpy as jnp
 
 from jax import core
 from jax._src import abstract_arrays
-from jax.interpreters import xla
 from jax._src.lib import xla_client
-from jax.interpreters import ad
-from jax.interpreters import batching
+from jax.interpreters import ad, batching, mlir, xla
 
 from .interface_utils import create_pycapsule
 from .xla_spike_vector import AbstractSparseSpikeVector
 from .xla_spike_vector_matmul_matrix_grad import get_spike_vector_matmul_matrix_grad_fn
 from .xla_spike_vector_matmul_vector_grad import get_spike_vector_matmul_vector_grad_fn
 from .xla_sparse_vector_matmul import get_sparse_vector_matmul_fn
+
+from jaxlib.mhlo_helpers import custom_call
 
 # from jax.lib import xla_client
 # xla_client.register_custom_call_target(b"cpu_add", cpu_add_fn)
@@ -93,6 +93,72 @@ def get_spike_vector_matmul_fn(op_name: str, so_file: str, fn_name: str, platfor
         else:
             raise NotImplementedError(f"Unsupported platform {platform}")
         return op_
+
+
+    def _spike_vector_matmul_lowering(ctx, matrix, spike_vector, *, use_grad_num_spikes):
+        # Extract the dtype and shape
+        operands = [matrix, spike_vector]
+        dtypes = [mlir.ir.RankedTensorType(val.type) for val in operands]
+        operand_layouts = [tuple(range(len(dtype.shape) - 1, -1, -1)) for dtype in dtypes]
+        result_layouts = operand_layouts[-1:]
+        
+
+        matrix_aval, spike_vector_aval = ctx.avals_in
+        num_rows, num_cols = matrix_aval.shape
+        batchsize, max_num_spikes = spike_vector_aval.batchsize, spike_vector_aval.max_num_spikes
+        
+        # print(matrix.type)
+        # print(type(matrix))
+        # print(type(matrix.type))
+        # sys.exit()
+        # TODO how get set proper dtype shape ?!
+        out_dtype = mlir.ir.RankedTensorType.get((batchsize, num_cols), dtypes[0].element_type)
+
+
+        if platform == "cpu":
+            raise NotImplementedError(f"Unsupported platform {platform}")
+            # dims = xla_client.ops.ConstantLiteral(ctx.builder, np.asarray((batchsize, num_cols, max_num_spikes, use_grad_num_spikes), dtype=np.uint64))
+            # shape_dims = xla_client.Shape.array_shape(np.dtype(np.uint64), (2,), (0,))
+            # op_ = [xla_client.ops.CustomCallWithLayout(
+            #     builder=ctx.builder,
+            #     call_target_name=op_name.encode(),
+            #     operands=(dims, *operands_base),
+            #     shape_with_layout=out_shape,
+            #     operand_shapes_with_layout=(
+            #         shape_dims,
+            #         operand_shapes,
+            #     ),
+            # )]
+            
+        elif platform == "gpu":
+            opaque = struct.pack("IIII", batchsize, num_cols, max_num_spikes, use_grad_num_spikes)
+            # op_ = [xla_client.ops.CustomCallWithLayout(
+            #     builder=ctx.builder,
+            #     call_target_name=op_name.encode(),
+            #     operands=operands_base,
+            #     shape_with_layout=out_shape,
+            #     operand_shapes_with_layout=operand_shapes,
+            #     opaque=opaque,
+            # )]
+
+            op_ = [custom_call(
+                op_name,
+                # Output types
+                out_types=[out_dtype],
+                # The inputs:
+                operands=operands,
+                # Layout specification:
+                operand_layouts=operand_layouts,
+                result_layouts=result_layouts,
+                # GPU specific additional data
+                backend_config=opaque
+            ),]
+
+        else:
+            raise NotImplementedError(f"Unsupported platform {platform}")
+        return op_
+
+
 
     def _spike_vector_matmul_value_and_jvp(arg_values, arg_tangents, *, use_grad_num_spikes):
         """Evaluates the primal output and the tangents (Jacobian-vector product).
@@ -206,7 +272,11 @@ def get_spike_vector_matmul_fn(op_name: str, so_file: str, fn_name: str, platfor
     _spike_vector_matmul_p = core.Primitive(op_name)  # Create the primitive
     _spike_vector_matmul_p.def_impl(ft.partial(xla.apply_primitive, _spike_vector_matmul_p))
     _spike_vector_matmul_p.def_abstract_eval(_spike_vector_matmul_abstract_eval)
+
+    # TODO use one of the two, appraently doens't matter which one...    
     xla.register_translation(_spike_vector_matmul_p, _spike_vector_matmul_xla_translation, platform=platform)
+    # mlir.register_lowering(_spike_vector_matmul_p, _spike_vector_matmul_lowering, platform=platform)
+
     ad.primitive_jvps[_spike_vector_matmul_p] = _spike_vector_matmul_value_and_jvp
     ad.primitive_transposes[_spike_vector_matmul_p] = _spike_vector_matmul_transpose
     batching.primitive_batchers[_spike_vector_matmul_p] = _spike_vector_matmul_batch
