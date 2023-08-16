@@ -44,17 +44,20 @@ class SparseSpikeVector:
             
             max_num_spikes = spike_ids.shape[-1]
                         
-            spike_ids = spike_ids.astype(np.uint32)
-            num_spikes = num_spikes.astype(np.uint32)
+            spike_ids = spike_ids.astype(np.uint32) # TODO really astype or view?
+            num_spikes = num_spikes.astype(np.uint32) # TODO really astype or view?
 
             if not batched: 
                 spike_ids = spike_ids[None, :]
             if batched:
                 assert num_spikes.shape[-1] == batchsize
             shape = AbstractSparseSpikeVector.calc_comb_spike_data_shape(is_stacked, batched, stack_size, batchsize, max_num_spikes)
-            comb_spike_data = jax.numpy.empty(shape, dtype=spike_ids.dtype).flatten()
-            comb_spike_data[:spike_ids.size] = spike_ids.flatten()
-            comb_spike_data[-num_spikes.size:] = num_spikes.flatten()
+            # comb_spike_data = jax.numpy.empty(shape, dtype=spike_ids.dtype).reshape((stack_size, -1))
+            spike_grad_data = jax.numpy.empty_like(spike_ids)
+            # comb_spike_data[:, :max_num_spikes*batchsize] = spike_ids.reshape((stack_size, -1))
+            # comb_spike_data[:, -2*batchsize:] = num_spikes.reshape((stack_size, -1))
+            # print()
+            comb_spike_data = jax.numpy.concatenate([spike_ids.reshape((stack_size, -1)), spike_grad_data.reshape((stack_size, -1)), num_spikes.reshape((stack_size, -1))], axis=-1, dtype=np.uint32)
             comb_spike_data = comb_spike_data.reshape(shape).view(dtype=np.float32)
         else:
             assert aval is not None
@@ -97,6 +100,7 @@ class SparseSpikeVector:
 
     @property
     def comb_spike_data(self):
+        # print(type(self._comb_spike_data))
         return self._comb_spike_data
 
     @property
@@ -513,7 +517,7 @@ aval_zeros_likers[AbstractSparseSpikeVector] = _zeros_like_sparse_spike_vector
 # TODO works for now... in the future more sophisticated implementation might be necessary (see code above)
 def _sparse_spike_vector_constant_handler(val: SparseSpikeVector, canonicalize_types
                              ) -> Sequence[ir.Value]:
-    return mlir._ndarray_constant_handler(val.comb_spike_data, canonicalize_types)
+    return mlir.get_constant_handler(type(val.comb_spike_data))(val.comb_spike_data, canonicalize_types)
 
 mlir.register_constant_handler(SparseSpikeVector, _sparse_spike_vector_constant_handler)
 
@@ -581,7 +585,9 @@ def _sparse_spike_vector_shard_arg(x, devices, indices, mode):
     # print("mode", mode)
     # sys.exit()
     # TODO just a quick fix, might break stuff in case of sharding across last dim
-    comb_spike_data_shard = _array_shard_arg(x.comb_spike_data, devices, indices, mode)
+    # comb_spike_data_shard = _array_shard_arg(jax.numpy.asarray(x.comb_spike_data), devices, indices, mode)
+    # comb_spike_data_shard = _array_shard_arg(x.comb_spike_data, devices, indices, mode)
+    comb_spike_data_shard = pxla.shard_arg_handlers[type(x.comb_spike_data)](x.comb_spike_data, devices, indices, mode)
     # # print(comb_spike_data_shard)
     # if len(comb_spike_data_shard) > 1:
     #     raise NotImplementedError

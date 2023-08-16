@@ -10,6 +10,8 @@ void get_sizes_from_opaque(void* opaque, unsigned int* sizes, const size_t opaqu
 
 // compile using 
 // nvcc -shared --compiler-options '-fPIC' -o libspike_vector_matmul_gpu.so xla_interface_spike_vector_matmul_gpu.cu
+// TODO consider using --use_fast_math (which implies --ftz=true --prec-div=false --prec-sqrt=false)
+// TODO consider using -ptx -o <filename>.ptx for "assembly" output
 
 // template <typename T> 
 extern "C" 
