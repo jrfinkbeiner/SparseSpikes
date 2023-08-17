@@ -1,6 +1,10 @@
 #include "spike_vector_from_dense_gpu.h"
 
-void get_sizes_from_opaque(void* opaque, unsigned int* sizes) {
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+static inline void get_sizes_from_opaque(void* opaque, unsigned int* sizes) {
   unsigned int* sizes_ptr = (unsigned int*) opaque;
   sizes[0] = sizes_ptr[0];
   sizes[1] = sizes_ptr[1];
@@ -91,3 +95,8 @@ void gen_spike_vector_gpu_f32_grad(cudaStream_t stream, void** buffers,
                      num_spikes_grad, spike_grads, state_grads,
                      max_num_spikes, batchsize, num_states);
 }
+
+
+#ifdef __cplusplus
+}
+#endif

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import numpy as np
 import jax
 
+from jax._src.core import aval_property
 from jax import core, jit, lax, make_jaxpr
 from jax._src import device_array
 from jax._src import dispatch
@@ -12,7 +13,8 @@ from jax._src import ad_util
 from jax.interpreters import mlir
 from jax.interpreters import xla
 from jax._src.lib.mlir import ir
-from jax._src.lib import xla_bridge, xla_client
+from jax._src.lib import xla_client
+from jax._src import xla_bridge
 xc = xla_client
 xb = xla_bridge
 
@@ -282,7 +284,7 @@ class AbstractSparseSpikeVector(core.ShapedArray):
     def strip_weak_type(self):
         return self
 
-    @core.aval_property
+    @aval_property
     def comb_spike_data(self):
         return comb_spike_data_p.bind(self)
 
@@ -347,9 +349,9 @@ core.pytype_aval_mappings[SparseSpikeVector] = lambda x: x.aval
 core.raise_to_shaped_mappings[AbstractSparseSpikeVector] = lambda aval, _: aval
 xla.pytype_aval_mappings[SparseSpikeVector] = lambda x: x.aval
 xla.canonicalize_dtype_handlers[SparseSpikeVector] = lambda x: x
-dispatch.device_put_handlers[SparseSpikeVector] = sparse_spike_vector_device_put_handler
-dispatch.result_handlers[AbstractSparseSpikeVector] = sparse_spike_vector_result_handler
-dispatch.num_buffers_handlers[AbstractSparseSpikeVector] = lambda _: 1
+# dispatch.device_put_handlers[SparseSpikeVector] = sparse_spike_vector_device_put_handler
+# dispatch.result_handlers[AbstractSparseSpikeVector] = sparse_spike_vector_result_handler
+# dispatch.num_buffers_handlers[AbstractSparseSpikeVector] = lambda _: 1
 xla.xla_shape_handlers[AbstractSparseSpikeVector] = sparse_spike_vector_shape_handler
 
 def sparse_spike_vector_mlir_type_handler(a):
@@ -366,7 +368,7 @@ def _map_shaped_array(
 #   print("\n_map_shaped_array", aval, size, axis )
   # print(aval)
   if axis==0:
-    assert aval.is_stacked
+    # assert aval.is_stacked # TODO make this mandatory?
     retval = aval.update(stack_size=-1)
   elif axis==1:
     assert aval.batched
@@ -517,17 +519,17 @@ aval_zeros_likers[AbstractSparseSpikeVector] = _zeros_like_sparse_spike_vector
 # TODO works for now... in the future more sophisticated implementation might be necessary (see code above)
 def _sparse_spike_vector_constant_handler(val: SparseSpikeVector, canonicalize_types
                              ) -> Sequence[ir.Value]:
-    return mlir.get_constant_handler(type(val.comb_spike_data))(val.comb_spike_data, canonicalize_types)
+    return jax._src.interpreters.mlir.get_constant_handler(type(val.comb_spike_data))(val.comb_spike_data, canonicalize_types)
 
 mlir.register_constant_handler(SparseSpikeVector, _sparse_spike_vector_constant_handler)
 
 
 
 from jax._src.typing import ArrayLike
-from jax.interpreters import pxla, xla, mlir
-from jax._src.sharding import (
-    Sharding, SingleDeviceSharding, XLACompatibleSharding, PmapSharding,
-    device_replica_id_map)
+from jax.interpreters import pxla, xla
+# from jax._src.sharding import (
+#     Sharding, SingleDeviceSharding, XLACompatibleSharding, PmapSharding,
+#     device_replica_id_map)
 from jax._src.array import ArrayImpl, _array_shard_arg, _array_global_result_handler, _array_local_result_handler
 
 
@@ -633,9 +635,12 @@ def _sparse_spike_vector_global_result_handler(global_aval, out_sharding, commit
 
 # pxla
 
-pxla.global_result_handlers[(AbstractSparseSpikeVector, pxla.OutputType.Array)] = _sparse_spike_vector_global_result_handler
+pxla.global_result_handlers[AbstractSparseSpikeVector] = _sparse_spike_vector_global_result_handler
 # pxla.global_result_handlers[(core.ConcreteArray, pxla.OutputType.Array)] = _array_global_result_handler
 # pxla.global_result_handlers[(core.AbstractToken, pxla.OutputType.Array)] = lambda *_: lambda *_: core.token
+
+
+print("pxla.global_result_handlers", pxla.global_result_handlers)
 
 
 # Only used for Arrays that come out of pmap.
@@ -655,5 +660,5 @@ def _sparse_spike_vector_local_result_handler(aval, sharding, indices):
         return SparseSpikeVector(comb_spike_data=array_impl, aval=aval)
     return _local_result_handler
 
-pxla.local_result_handlers[(core.ShapedArray, pxla.OutputType.Array)] = _sparse_spike_vector_local_result_handler
+pxla.local_result_handlers[(core.ShapedArray, core.ShapedArray)] = _sparse_spike_vector_local_result_handler
 # pxla.local_result_handlers[(core.ConcreteArray, pxla.OutputType.Array)] = _array_local_result_handler
