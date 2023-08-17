@@ -813,83 +813,83 @@ def load_dataset_to_tensor_dict(dataset_name, root, sparse, seq_len, inp_dim, nu
     return ret_val
 
 
-import numpy as np
-from torch.utils import data
-from torchvision.datasets import MNIST
+# import numpy as np
+# from torch.utils import data
+# from torchvision.datasets import MNIST
 
-def numpy_collate(batch):
-  if isinstance(batch[0], np.ndarray):
-    return np.stack(batch)
-  elif isinstance(batch[0], (tuple,list)):
-    transposed = zip(*batch)
-    return [numpy_collate(samples) for samples in transposed]
-#   elif isinstance(batch[0], dict):
-#     return {key: numpy_collate([d[key] for d in batch]) for key in batch[0]}
-    # values, keys = zip(*batch[0].items())
-  else:
-    return np.array(batch)
+# def numpy_collate(batch):
+#   if isinstance(batch[0], np.ndarray):
+#     return np.stack(batch)
+#   elif isinstance(batch[0], (tuple,list)):
+#     transposed = zip(*batch)
+#     return [numpy_collate(samples) for samples in transposed]
+# #   elif isinstance(batch[0], dict):
+# #     return {key: numpy_collate([d[key] for d in batch]) for key in batch[0]}
+#     # values, keys = zip(*batch[0].items())
+#   else:
+#     return np.array(batch)
 
-class SpikesLoader(data.DataLoader):
-  def __init__(self, dataset, batch_size=1,
-                shuffle=False, sampler=None,
-                batch_sampler=None, num_workers=0,
-                pin_memory=False, drop_last=False,
-                timeout=0, worker_init_fn=None):
-    super(self.__class__, self).__init__(dataset,
-        batch_size=batch_size,
-        shuffle=shuffle,
-        sampler=sampler,
-        batch_sampler=batch_sampler,
-        num_workers=num_workers,
-        # collate_fn=numpy_collate,
-        pin_memory=pin_memory,
-        drop_last=drop_last,
-        timeout=timeout,
-        worker_init_fn=worker_init_fn)
+# class SpikesLoader(data.DataLoader):
+#   def __init__(self, dataset, batch_size=1,
+#                 shuffle=False, sampler=None,
+#                 batch_sampler=None, num_workers=0,
+#                 pin_memory=False, drop_last=False,
+#                 timeout=0, worker_init_fn=None):
+#     super(self.__class__, self).__init__(dataset,
+#         batch_size=batch_size,
+#         shuffle=shuffle,
+#         sampler=sampler,
+#         batch_sampler=batch_sampler,
+#         num_workers=num_workers,
+#         # collate_fn=numpy_collate,
+#         pin_memory=pin_memory,
+#         drop_last=drop_last,
+#         timeout=timeout,
+#         worker_init_fn=worker_init_fn)
 
-# class FlattenAndCast(object):
-#   def __call__(self, pic):
-#     return np.ravel(np.array(pic, dtype=jnp.float32))
-
-
-def get_dataloader(rng: np.random.Generator, dataset_name, root, sparse, seq_len=300, sparse_size=None, dataset_split='train', shuffle=None, batchsize=None, delta_t=1000, **kwargs):
-    dataset = get_create_dataset_fn(dataset_name)(root, sparse, seq_len=seq_len, sparse_size=sparse_size, dataset=dataset_split, apply_flatten=True, delta_t=delta_t)
-    dataloader = SpikesLoader(
-        dataset,
-        batch_size=batchsize,
-        shuffle=shuffle,
-        **kwargs
-    )
-    return dataloader, len(dataset)
+# # class FlattenAndCast(object):
+# #   def __call__(self, pic):
+# #     return np.ravel(np.array(pic, dtype=jnp.float32))
 
 
-def get_tonic_prototyping_dataloader(rng: np.random.Generator, dataset_name, root, sparse, seq_len=300, sparse_size=None, dataset_split='train', shuffle=None, batchsize=None, delta_t=1000, **kwargs):
+# def get_dataloader(rng: np.random.Generator, dataset_name, root, sparse, seq_len=300, sparse_size=None, dataset_split='train', shuffle=None, batchsize=None, delta_t=1000, **kwargs):
+#     dataset = get_create_dataset_fn(dataset_name)(root, sparse, seq_len=seq_len, sparse_size=sparse_size, dataset=dataset_split, apply_flatten=True, delta_t=delta_t)
+#     dataloader = SpikesLoader(
+#         dataset,
+#         batch_size=batchsize,
+#         shuffle=shuffle,
+#         **kwargs
+#     )
+#     return dataloader, len(dataset)
 
-    assert dataset_name == "NMNIST", "Only NMNIST is supported for now"
-    from tonic.prototype.datasets.nmnist import NMNIST
-    transforms = get_nmnist_transforms(sparse, seq_len, sparse_size, True, delta_t)
-    import os
-    datapipe = NMNIST(
-        root=os.path.join(root, "NMNIST"),
-        transform=transforms,
-        target_transform=None,
-        transforms=None,
-        train=(dataset_split == "train"),
-        first_saccade_only=False,
-    ) 
-    dataloader = SpikesLoader(
-        datapipe,
-        batch_size=batchsize,
-        shuffle=shuffle,
-        **kwargs
-    )
 
-    # from torchdata.datapipes.iter import Mapper
-    # datapipe = NMNIST(root="./data")
-    # datapipe = Mapper(datapipe, t, input_col=0) # input_col=0 tells Mapper to apply the function t to the entry number 0 of the tuple. 
-    # frames, target = next(iter(datapipe))
+# def get_tonic_prototyping_dataloader(rng: np.random.Generator, dataset_name, root, sparse, seq_len=300, sparse_size=None, dataset_split='train', shuffle=None, batchsize=None, delta_t=1000, **kwargs):
 
-    return dataloader, len(datapipe)
+#     assert dataset_name == "NMNIST", "Only NMNIST is supported for now"
+#     from tonic.prototype.datasets.nmnist import NMNIST
+#     transforms = get_nmnist_transforms(sparse, seq_len, sparse_size, True, delta_t)
+#     import os
+#     datapipe = NMNIST(
+#         root=os.path.join(root, "NMNIST"),
+#         transform=transforms,
+#         target_transform=None,
+#         transforms=None,
+#         train=(dataset_split == "train"),
+#         first_saccade_only=False,
+#     ) 
+#     dataloader = SpikesLoader(
+#         datapipe,
+#         batch_size=batchsize,
+#         shuffle=shuffle,
+#         **kwargs
+#     )
+
+#     # from torchdata.datapipes.iter import Mapper
+#     # datapipe = NMNIST(root="./data")
+#     # datapipe = Mapper(datapipe, t, input_col=0) # input_col=0 tells Mapper to apply the function t to the entry number 0 of the tuple. 
+#     # frames, target = next(iter(datapipe))
+
+#     return dataloader, len(datapipe)
 
 
 

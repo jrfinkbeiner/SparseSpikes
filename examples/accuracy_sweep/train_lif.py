@@ -13,7 +13,7 @@ import optax
 
 from sparsespikes.jax_interface import SparseSpikeVector
 
-from nmnist_util import create_gener, get_dataloader, get_tonic_prototyping_dataloader
+from nmnist_util import create_gener #, get_dataloader, get_tonic_prototyping_dataloader
 from architecture import init_network_weights, init_network_states, create_one_hot, calc_loss_batch, lif_network, sum_and_crossentropy
 from util import calc_mean_activity
 
@@ -75,7 +75,7 @@ def init_LSUV_actrate(act_rate, threshold=0., var=1.0):
     import scipy.optimize
     return scipy.optimize.fmin(lambda loc: (act_rate-(1-norm.cdf(threshold,loc,var)))**2, x0=0.)[0]
 
-def main(args, root_path):
+def main(args):
     use_wandb = args.use_wandb
     if use_wandb:
         import wandb
@@ -83,7 +83,7 @@ def main(args, root_path):
         wandb.init(project=f"{args.dataset_name}_sweep", config=args) # TODO save the layer sizes!!! and lsuv init params
 
     DATASET_NAME = args.dataset_name
-    ROOT_PATH = root_path
+    ROOT_PATH = args.root_path_data
     SEQ_LEN = args.seq_len
     BATCHSIZE = args.batchsize
     BATCHSIZE_TEST = args.batchsize_test
@@ -121,8 +121,8 @@ def main(args, root_path):
     key = jrandom.PRNGKey(rng.integers(999999))
 
     DATASET_TO_IMAGE_DIMS = {
-        "NMNIST": (32, 32, 2), # (24, 24, 2) if BENCH_MODE == "multi_neuron" else ,
-        "DVSGesture":  (48, 48, 2), # (64, 64, 2),
+        "NMNIST": (32, 32, 2),
+        "DVSGesture":  (48, 48, 2),
         "SHD": (700, 1, 1),
     }
     IMAGE_DIMS = DATASET_TO_IMAGE_DIMS[DATASET_NAME]
@@ -133,42 +133,18 @@ def main(args, root_path):
     }
     NUM_CLASSES = DATASET_NUM_CLASSES[DATASET_NAME]
 
+    if args.num_hidden_layers==2:
+        DENSE_SIZES = [np.prod(IMAGE_DIMS), 512, 128, NUM_CLASSES]
+    elif args.num_hidden_layers==3:
+        DENSE_SIZES = [np.prod(IMAGE_DIMS), 1024, 512, 128, NUM_CLASSES]
+    elif args.num_hidden_layers==4:
+        DENSE_SIZES = [np.prod(IMAGE_DIMS), 1472, 1024, 512, 128, NUM_CLASSES]
+    elif args.num_hidden_layers==5:
+        DENSE_SIZES = [np.prod(IMAGE_DIMS), 1472, 1024, 1024, 512, 128, NUM_CLASSES]
+    elif args.num_hidden_layers==6:
+        DENSE_SIZES = [np.prod(IMAGE_DIMS), 1472, 1024, 1024, 1024, 512, 128, NUM_CLASSES]
 
-
-    if DATASET_NAME == "NMNIST":
-        # DENSE_SIZES = [np.prod(IMAGE_DIMS), 256, 128, NUM_CLASSES] # v1
-        if args.num_hidden_layers==2:
-            DENSE_SIZES = [np.prod(IMAGE_DIMS), 512, 128, NUM_CLASSES]
-        elif args.num_hidden_layers==3:
-            DENSE_SIZES = [np.prod(IMAGE_DIMS), 1024, 512, 128, NUM_CLASSES]
-        else:
-            raise ValueError("num_hidden_layers should be 2 or 3")
-        SPARSE_SIZES = [SPARSE_SIZE_INP, *[int(max((MAX_ACTIVITY*dense_size//2)*2, 2)) for dense_size in DENSE_SIZES[1:]]]
-    elif DATASET_NAME == "DVSGesture":
-        if args.num_hidden_layers==2:
-            DENSE_SIZES = [np.prod(IMAGE_DIMS), 512, 128, NUM_CLASSES]
-        elif args.num_hidden_layers==3:
-            DENSE_SIZES = [np.prod(IMAGE_DIMS), 1024, 512, 128, NUM_CLASSES]
-        elif args.num_hidden_layers==4:
-            DENSE_SIZES = [np.prod(IMAGE_DIMS), 1472, 1024, 512, 128, NUM_CLASSES]
-        else:
-            raise ValueError("num_hidden_layers should be 2 or 3")
-        SPARSE_SIZES = [SPARSE_SIZE_INP, *[int(max((MAX_ACTIVITY*dense_size//2)*2, 2)) for dense_size in DENSE_SIZES[1:]]]
-    elif DATASET_NAME == "SHD":
-        if args.num_hidden_layers==2:
-            DENSE_SIZES = [np.prod(IMAGE_DIMS), 512, 128, NUM_CLASSES]
-        elif args.num_hidden_layers==3:
-            DENSE_SIZES = [np.prod(IMAGE_DIMS), 1024, 512, 128, NUM_CLASSES]
-        elif args.num_hidden_layers==4:
-            DENSE_SIZES = [np.prod(IMAGE_DIMS), 1472, 1024, 512, 128, NUM_CLASSES]
-        elif args.num_hidden_layers==5:
-            DENSE_SIZES = [np.prod(IMAGE_DIMS), 1472, 1024, 1024, 512, 128, NUM_CLASSES]
-        elif args.num_hidden_layers==6:
-            DENSE_SIZES = [np.prod(IMAGE_DIMS), 1472, 1024, 1024, 1024, 512, 128, NUM_CLASSES]
-        else:
-            raise ValueError("num_hidden_layers should be 2, 3, 4, 5, or 6")
-
-        SPARSE_SIZES = [SPARSE_SIZE_INP, *[int(max((MAX_ACTIVITY*dense_size//2)*2, 2)) for dense_size in DENSE_SIZES[1:]]]
+    SPARSE_SIZES = [SPARSE_SIZE_INP, *[int(max((MAX_ACTIVITY*dense_size//2)*2, 2)) for dense_size in DENSE_SIZES[1:]]]
 
     NUM_HIDDEN_LAYERS = len(DENSE_SIZES)-2
 
@@ -187,63 +163,6 @@ def main(args, root_path):
     NUM_BATCHES = num_samples//BATCHSIZE
     print("NUM_SAMPLES TRAIN:", num_samples)
     print("NUM_SAMPLES_TEST:", num_samples_test)
-
-    # gen_train_torch, num_samples_torch = get_dataloader(rng, DATASET_NAME, ROOT_PATH, USE_SPARSE, seq_len=SEQ_LEN, sparse_size=INP_DIM, dataset_split="train", batchsize=BATCHSIZE, shuffle=True, num_workers=min(int(BATCHSIZE/2), 16)) #, num_samples=num_samples)
-
-    # gen_train_prot, num_samples_prot = get_tonic_prototyping_dataloader(rng, DATASET_NAME, ROOT_PATH, USE_SPARSE, seq_len=SEQ_LEN, sparse_size=INP_DIM, dataset_split="train", batchsize=BATCHSIZE, shuffle=True, num_workers=min(int(BATCHSIZE/2), 16)) #, num_samples=num_samples)
-
-
-    # import torchneuromorphic.nmnist.nmnist_dataloaders as create_dataloader
-    # gen_train_torchneuro, _ = create_dataloader.create_dataloader(         
-    #                                                             "/Data/pgi-15/datasets/nmnist/n_mnist.hdf5",                                    
-    #                                                             chunk_size_train=SEQ_LEN,
-    #                                                             chunk_size_test=SEQ_LEN,
-    #                                                             dt=1000, num_workers=16, #min(int(BATCHSIZE/2), 48),
-    #                                                             ds=1,
-    #                                                             batch_size=BATCHSIZE,
-    #                                                             #channel_first = True,
-    #                                                             target_transform_train =  lambda x:x,
-    #                                                             target_transform_test  =  lambda x:x,
-    #                                                             drop_last = True)
-
-    # import time
-
-    # time_start = time.time()
-    # for i, batch in enumerate(gen_train_torchneuro):
-    #     # print(i, batch[0].shape, batch[1].shape)
-    #     # time.sleep(0.05)
-    #     if i>10:
-    #         break
-    # print("time taken torchneuro:", time.time()-time_start)
-
-
-
-    # time_start = time.time()
-    # for i, batch in enumerate(gen_train_torch):
-    #     # print(i, batch[0].shape, batch[1].shape)
-    #     # time.sleep(0.05)
-    #     if i>10:
-    #         break
-    # print("time taken torch:", time.time()-time_start)
-
-    # time_start = time.time()
-    # for i, batch in enumerate(gen_train_prot):
-    #     # print(i, batch[0].shape, batch[1].shape)
-    #     # time.sleep(0.05)
-    #     if i>10:
-    #         break
-    # print("time taken prot:", time.time()-time_start)
-
-    # time_start = time.time()
-    # for i, np_batch in enumerate(gen_train()):
-    #     inp_spikes, labels = jax_create_batch(np_batch, NUM_CLASSES, num_neurons=np.prod(IMAGE_DIMS))
-    #     # print(i, batch["x"].shape, batch["y"].shape)
-    #     # time.sleep(0.05)
-    #     if i>10:
-    #         break
-    # print("time taken custom:", time.time()-time_start)
-
-    # sys.exit()
 
     key, params_key = jrandom.split(key)
     params = init_network_weights(params_key, DENSE_SIZES, True, dtype=jnp.float32)
@@ -274,10 +193,6 @@ def main(args, root_path):
         spike_layer_ids = tuple(range(len(params))) if RO_TYPE=="spike_sum" else tuple(range(len(params)-2)) # -1 for readout layer, -1 for leaky integrate (non fire layer)
         params = lsuv(ft.partial(lif_network, sparse_sizes=SPARSE_SIZES), init_states, params, (thresholds, alphas), spike_layer_ids, lsuv_data, init_key, var_tol=0.1, mean_tol=0.1, tgt_mean=tgt_mu, tgt_var=tgt_var, max_iters=500)
 
-    # opt = optax.sgd(LEARNING_RATE, momentum=0.9)
-    # opt = optax.adam(LEARNING_RATE)
-    # opt = optax.adamw(LEARNING_RATE)
-
     if args.use_lr_scheduler:
         lr = optax.warmup_cosine_decay_schedule(
             init_value=LEARNING_RATE/5,
@@ -288,7 +203,7 @@ def main(args, root_path):
             )
     else:
         lr = LEARNING_RATE
-    opt = optax.adamw(lr) #, b1=0, b2=0.95)
+    opt = optax.adamw(lr)
 
 
 
@@ -307,7 +222,6 @@ def main(args, root_path):
     }
     calc_accuracy_from_output_fn = calc_accuracy_from_output_fn_dict[RO_TYPE]
 
-
     all_train_accs = np.zeros(NUM_EPOCHS)
     all_test_accs = np.zeros(NUM_EPOCHS)
     for epoch in range(NUM_EPOCHS):
@@ -320,7 +234,6 @@ def main(args, root_path):
 
             states, out_spikes = aux
             train_accs[i] = jax.jit(calc_accuracy_from_output_fn)(out_spikes[-1], np_batch["targets"])
-            # pbar.set_description(f"Training Loss {loss} | Training accuracy {np.mean(train_accs[:(i+1)]):2.2%}: | ")
             pbar.set_description(f"Training Loss {loss:3.6} | Training accuracy {train_accs[0] if i==0 else np.mean(train_accs[max((i-10),0):(i+1)]):2.2%}: | Test accuracy - | ")
 
             if args.use_thresh_scheduler:
@@ -343,34 +256,33 @@ def main(args, root_path):
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="Randman training optionally using the IPU and sparse implementations.")
+    parser = argparse.ArgumentParser(description="SNN training optionally using the IPU and sparse implementations.")
     parser.add_argument('--use_sparse', type=int, default=1, help="Whether to use the IPU (default is `1` therefore `True`).")
-    parser.add_argument('--batchsize', type=int, default=48, help="batchsize to use for training, default is 48.")
+    parser.add_argument('--batchsize', type=int, default=256, help="batchsize to use for training, default is 48.")
     parser.add_argument('--lr', type=float, default=1e-2, help="Learning rate for optimizer, default `1e-2`.")
-    parser.add_argument('--use_lr_scheduler', type=int, default=0, help="Whether to use the learning rate scheduler (default is `0` therefore `False`).")
+    parser.add_argument('--use_lr_scheduler', type=int, default=1, help="Whether to use the learning rate scheduler (default is `1` therefore `True`).")
     parser.add_argument('--second_threshold', type=float, default=0.9, help="Second threshold, default `0.9`.")
     parser.add_argument('--dataset_name', type=str, default="NMNIST", help="dataset name, in ['NMNIST' (default), 'DVSGesture', 'SHD'].")
-    parser.add_argument('--max_activity', type=float, default=0.05, help="Max activity in case of 'multi_layer'-mode.")
-    parser.add_argument('--num_hidden_layers', type=int, default=2, help="Number of IPUs to use, default `1`.")
-    parser.add_argument('--sparse_size_inp', type=int, default=128, help="sparse size for input.")
+    parser.add_argument('--max_activity', type=float, default=0.01, help="Max activity in case of 'multi_layer'-mode.")
+    parser.add_argument('--num_hidden_layers', type=int, default=3, help="Number of IPUs to use, default `1`.")
+    parser.add_argument('--sparse_size_inp', type=int, default=32, help="sparse size for input.")
     # parser.add_argument('--num_neurons_per_tile', type=int, default=2, help="The maximal number of neurons per Tile.")
     parser.add_argument('--seq_len', type=int, default=250, help="The sequence length.")
     parser.add_argument('--num_epochs', type=int, default=25, help="The number of epochs to train the model.")
     parser.add_argument('--batchsize_test', type=int, default=2000, help="The batchsize used for validation.")
-    parser.add_argument('--use_wandb', type=int, default=1, help="Whether to use wandb for logging.")
+    parser.add_argument('--use_wandb', type=int, default=0, help="Whether to use wandb for logging.")
     parser.add_argument('--use_bias', type=int, default=1, help="Whether to use bias.")
     parser.add_argument('--use_lsuv', type=int, default=1, help="Whether to use LSUV.")
     parser.add_argument('--act_rate', type=float, default=0.05, help="Activity rate to use for LSUV init.")
-    parser.add_argument('--ro_type', type=str, default="spike_sum", help="Readout type one of 'spike_sum' or 'linear_ro'.")
+    parser.add_argument('--ro_type', type=str, default="linear_ro", help="Readout type one of 'spike_sum' or 'linear_ro'.")
     parser.add_argument('--ro_int', type=int, default=-1, help="Readout interval to use for prediction and loss calculation.")
-    parser.add_argument('--use_thresh_scheduler', type=int, default=0, help="Whether to use a threshold schedule.")
-    parser.add_argument('--thresh_scheduler_mul', type=float, default=0.01, help="Multiply factor used in threshold scheduler.")
-    parser.add_argument('--use_aug', type=int, default=0, help="Whether to use data agumentation during training (defualt = 0 (False)).")
+    parser.add_argument('--use_thresh_scheduler', type=int, default=1, help="Whether to use a threshold schedule.")
+    parser.add_argument('--thresh_scheduler_mul', type=float, default=0.5, help="Multiply factor used in threshold scheduler.")
+    parser.add_argument('--use_aug', type=int, default=1, help="Whether to use data agumentation during training (defualt = 0 (False)).")
     parser.add_argument('--use_crop', type=int, default=0, help="Whether to crop data (only used for DVSGesture) (defualt = 0 (False)).")
-    
+    parser.add_argument('--root_path_data', type=str, default="/Data/pgi-15/finkbeiner/datasets/", help="Root path to datasets.")
     # parser.add_argument('--num_tests_per_epoch', type=int, default=0.01, help="How often per epoch an eval.")
 
     args = parser.parse_args()
 
-    ROOT_PATH_DATA = "/Data/pgi-15/finkbeiner/datasets/"
-    main(args, ROOT_PATH_DATA)
+    main(args)

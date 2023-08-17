@@ -3,7 +3,6 @@ import functools as ft
 import jax
 import jax.numpy as jnp
 import jax.random as jrand
-import equinox as eqx
 
 from jax.tree_util import tree_leaves
 from jax.nn.initializers import zeros, orthogonal
@@ -51,8 +50,8 @@ def lsuv(call_fn,
     layerwise_model_params = [
         [
             # weight_init_fn(w_key, weight.shape, weight.dtype),
-            jax.jit(orthogonal(), backend='cpu', static_argnums=1)(w_key, weight.shape),
-            # orthogonal()(w_key, weight.shape),
+            # jax.device_put(jax.jit(orthogonal(), backend='cpu', static_argnums=1)(w_key, weight.shape), "gpu"),
+            orthogonal()(w_key, weight.shape),
             zeros(b_key, bias.shape, bias.dtype) if bias is not None else None
         ]
         for weight, bias in layerwise_model_params

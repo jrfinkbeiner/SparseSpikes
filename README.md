@@ -36,7 +36,7 @@ You need to install jax and jaxlib version 0.4.7 for the GPU. Instructions see a
 Additionally you need a few requirements, install via:
 
 ```
-pip install -r requirements.txt
+pip install -r requirements.txt -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.htm
 ```
 
 If you want to run the example code and SNN training scripts under `examples/accuracy_sweeps` you need to install additional requirements via:
