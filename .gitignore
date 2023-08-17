@@ -1,5 +1,12 @@
-examples/
+*.png
+*.pdf
+*.svg
+build/
+build_*/
+wandb/
 tests/jaxpr_*.txt
+log_*
+*.log
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

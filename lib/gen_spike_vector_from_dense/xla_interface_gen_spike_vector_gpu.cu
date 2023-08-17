@@ -1,6 +1,10 @@
 #include "spike_vector_from_dense_gpu.h"
 
-void get_sizes_from_opaque(void* opaque, unsigned int* sizes) {
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+static inline void get_sizes_from_opaque(void* opaque, unsigned int* sizes) {
   unsigned int* sizes_ptr = (unsigned int*) opaque;
   sizes[0] = sizes_ptr[0];
   sizes[1] = sizes_ptr[1];
@@ -9,6 +13,8 @@ void get_sizes_from_opaque(void* opaque, unsigned int* sizes) {
 
 // compile using 
 // nvcc -shared --compiler-options '-fPIC' -o libgen_sparse_spikes_gpu.so xla_interface_gen_spike_vector_gpu.cu
+// TODO consider using --use_fast_math (which implies --ftz=true --prec-div=false --prec-sqrt=false)
+// TODO consider using -ptx -o <filename>.ptx for "assembly" output
 
 // template <typename T> 
 extern "C" 
@@ -89,3 +95,8 @@ void gen_spike_vector_gpu_f32_grad(cudaStream_t stream, void** buffers,
                      num_spikes_grad, spike_grads, state_grads,
                      max_num_spikes, batchsize, num_states);
 }
+
+
+#ifdef __cplusplus
+}
+#endif

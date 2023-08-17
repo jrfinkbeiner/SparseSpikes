@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import numpy as np
 import jax
 
+from jax._src.core import aval_property
 from jax import core, jit, lax, make_jaxpr
 from jax._src import device_array
 from jax._src import dispatch
@@ -12,7 +13,8 @@ from jax._src import ad_util
 from jax.interpreters import mlir
 from jax.interpreters import xla
 from jax._src.lib.mlir import ir
-from jax._src.lib import xla_bridge, xla_client
+from jax._src.lib import xla_client
+from jax._src import xla_bridge
 xc = xla_client
 xb = xla_bridge
 
@@ -44,17 +46,20 @@ class SparseSpikeVector:
             
             max_num_spikes = spike_ids.shape[-1]
                         
-            spike_ids = spike_ids.astype(np.uint32)
-            num_spikes = num_spikes.astype(np.uint32)
+            spike_ids = spike_ids.astype(np.uint32) # TODO really astype or view?
+            num_spikes = num_spikes.astype(np.uint32) # TODO really astype or view?
 
             if not batched: 
                 spike_ids = spike_ids[None, :]
             if batched:
                 assert num_spikes.shape[-1] == batchsize
             shape = AbstractSparseSpikeVector.calc_comb_spike_data_shape(is_stacked, batched, stack_size, batchsize, max_num_spikes)
-            comb_spike_data = jax.numpy.empty(shape, dtype=spike_ids.dtype).flatten()
-            comb_spike_data[:spike_ids.size] = spike_ids.flatten()
-            comb_spike_data[-num_spikes.size:] = num_spikes.flatten()
+            # comb_spike_data = jax.numpy.empty(shape, dtype=spike_ids.dtype).reshape((stack_size, -1))
+            spike_grad_data = jax.numpy.empty_like(spike_ids)
+            # comb_spike_data[:, :max_num_spikes*batchsize] = spike_ids.reshape((stack_size, -1))
+            # comb_spike_data[:, -2*batchsize:] = num_spikes.reshape((stack_size, -1))
+            # print()
+            comb_spike_data = jax.numpy.concatenate([spike_ids.reshape((stack_size, -1)), spike_grad_data.reshape((stack_size, -1)), num_spikes.reshape((stack_size, -1))], axis=-1, dtype=np.uint32)
             comb_spike_data = comb_spike_data.reshape(shape).view(dtype=np.float32)
         else:
             assert aval is not None
@@ -97,6 +102,7 @@ class SparseSpikeVector:
 
     @property
     def comb_spike_data(self):
+        # print(type(self._comb_spike_data))
         return self._comb_spike_data
 
     @property
@@ -278,7 +284,7 @@ class AbstractSparseSpikeVector(core.ShapedArray):
     def strip_weak_type(self):
         return self
 
-    @core.aval_property
+    @aval_property
     def comb_spike_data(self):
         return comb_spike_data_p.bind(self)
 
@@ -343,9 +349,9 @@ core.pytype_aval_mappings[SparseSpikeVector] = lambda x: x.aval
 core.raise_to_shaped_mappings[AbstractSparseSpikeVector] = lambda aval, _: aval
 xla.pytype_aval_mappings[SparseSpikeVector] = lambda x: x.aval
 xla.canonicalize_dtype_handlers[SparseSpikeVector] = lambda x: x
-dispatch.device_put_handlers[SparseSpikeVector] = sparse_spike_vector_device_put_handler
-dispatch.result_handlers[AbstractSparseSpikeVector] = sparse_spike_vector_result_handler
-dispatch.num_buffers_handlers[AbstractSparseSpikeVector] = lambda _: 1
+# dispatch.device_put_handlers[SparseSpikeVector] = sparse_spike_vector_device_put_handler
+# dispatch.result_handlers[AbstractSparseSpikeVector] = sparse_spike_vector_result_handler
+# dispatch.num_buffers_handlers[AbstractSparseSpikeVector] = lambda _: 1
 xla.xla_shape_handlers[AbstractSparseSpikeVector] = sparse_spike_vector_shape_handler
 
 def sparse_spike_vector_mlir_type_handler(a):
@@ -362,7 +368,7 @@ def _map_shaped_array(
 #   print("\n_map_shaped_array", aval, size, axis )
   # print(aval)
   if axis==0:
-    assert aval.is_stacked
+    # assert aval.is_stacked # TODO make this mandatory?
     retval = aval.update(stack_size=-1)
   elif axis==1:
     assert aval.batched
@@ -513,17 +519,17 @@ aval_zeros_likers[AbstractSparseSpikeVector] = _zeros_like_sparse_spike_vector
 # TODO works for now... in the future more sophisticated implementation might be necessary (see code above)
 def _sparse_spike_vector_constant_handler(val: SparseSpikeVector, canonicalize_types
                              ) -> Sequence[ir.Value]:
-    return mlir._ndarray_constant_handler(val.comb_spike_data, canonicalize_types)
+    return jax._src.interpreters.mlir.get_constant_handler(type(val.comb_spike_data))(val.comb_spike_data, canonicalize_types)
 
 mlir.register_constant_handler(SparseSpikeVector, _sparse_spike_vector_constant_handler)
 
 
 
 from jax._src.typing import ArrayLike
-from jax.interpreters import pxla, xla, mlir
-from jax._src.sharding import (
-    Sharding, SingleDeviceSharding, XLACompatibleSharding, PmapSharding,
-    device_replica_id_map)
+from jax.interpreters import pxla, xla
+# from jax._src.sharding import (
+#     Sharding, SingleDeviceSharding, XLACompatibleSharding, PmapSharding,
+#     device_replica_id_map)
 from jax._src.array import ArrayImpl, _array_shard_arg, _array_global_result_handler, _array_local_result_handler
 
 
@@ -581,7 +587,9 @@ def _sparse_spike_vector_shard_arg(x, devices, indices, mode):
     # print("mode", mode)
     # sys.exit()
     # TODO just a quick fix, might break stuff in case of sharding across last dim
-    comb_spike_data_shard = _array_shard_arg(x.comb_spike_data, devices, indices, mode)
+    # comb_spike_data_shard = _array_shard_arg(jax.numpy.asarray(x.comb_spike_data), devices, indices, mode)
+    # comb_spike_data_shard = _array_shard_arg(x.comb_spike_data, devices, indices, mode)
+    comb_spike_data_shard = pxla.shard_arg_handlers[type(x.comb_spike_data)](x.comb_spike_data, devices, indices, mode)
     # # print(comb_spike_data_shard)
     # if len(comb_spike_data_shard) > 1:
     #     raise NotImplementedError
@@ -627,9 +635,12 @@ def _sparse_spike_vector_global_result_handler(global_aval, out_sharding, commit
 
 # pxla
 
-pxla.global_result_handlers[(AbstractSparseSpikeVector, pxla.OutputType.Array)] = _sparse_spike_vector_global_result_handler
+pxla.global_result_handlers[AbstractSparseSpikeVector] = _sparse_spike_vector_global_result_handler
 # pxla.global_result_handlers[(core.ConcreteArray, pxla.OutputType.Array)] = _array_global_result_handler
 # pxla.global_result_handlers[(core.AbstractToken, pxla.OutputType.Array)] = lambda *_: lambda *_: core.token
+
+
+print("pxla.global_result_handlers", pxla.global_result_handlers)
 
 
 # Only used for Arrays that come out of pmap.
@@ -649,5 +660,5 @@ def _sparse_spike_vector_local_result_handler(aval, sharding, indices):
         return SparseSpikeVector(comb_spike_data=array_impl, aval=aval)
     return _local_result_handler
 
-pxla.local_result_handlers[(core.ShapedArray, pxla.OutputType.Array)] = _sparse_spike_vector_local_result_handler
+pxla.local_result_handlers[(core.ShapedArray, core.ShapedArray)] = _sparse_spike_vector_local_result_handler
 # pxla.local_result_handlers[(core.ConcreteArray, pxla.OutputType.Array)] = _array_local_result_handler

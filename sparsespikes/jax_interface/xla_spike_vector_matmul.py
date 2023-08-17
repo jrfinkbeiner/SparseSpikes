@@ -18,7 +18,7 @@ from .xla_spike_vector_matmul_matrix_grad import get_spike_vector_matmul_matrix_
 from .xla_spike_vector_matmul_vector_grad import get_spike_vector_matmul_vector_grad_fn
 from .xla_sparse_vector_matmul import get_sparse_vector_matmul_fn
 
-from jaxlib.mhlo_helpers import custom_call
+# from jaxlib.mhlo_helpers import custom_call
 
 # from jax.lib import xla_client
 # xla_client.register_custom_call_target(b"cpu_add", cpu_add_fn)
@@ -141,7 +141,7 @@ def get_spike_vector_matmul_fn(op_name: str, so_file: str, fn_name: str, platfor
             #     opaque=opaque,
             # )]
 
-            op_ = [custom_call(
+            op_ = [xla_client.ops.CustomCallWithLayout(
                 op_name,
                 # Output types
                 out_types=[out_dtype],

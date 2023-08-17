@@ -1,7 +1,11 @@
 #include "stdio.h"
 #include "spike_vector_matmul_gpu.h"
 
-void get_sizes_from_opaque(void* opaque, unsigned int* sizes, const size_t opaque_len) {
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+static inline void get_sizes_from_opaque(void* opaque, unsigned int* sizes, const size_t opaque_len) {
   unsigned int* sizes_ptr = (unsigned int*) opaque;
   for (int i = 0; i < opaque_len; ++i) {
     sizes[i] = sizes_ptr[i];
@@ -10,9 +14,10 @@ void get_sizes_from_opaque(void* opaque, unsigned int* sizes, const size_t opaqu
 
 // compile using 
 // nvcc -shared --compiler-options '-fPIC' -o libspike_vector_matmul_gpu.so xla_interface_spike_vector_matmul_gpu.cu
+// TODO consider using --use_fast_math (which implies --ftz=true --prec-div=false --prec-sqrt=false)
+// TODO consider using -ptx -o <filename>.ptx for "assembly" output
 
 // template <typename T> 
-extern "C" 
 void spike_vector_matmul_gpu_f32(cudaStream_t stream, void** buffers, 
                     const char* opaque, size_t opaque_len) {
 
@@ -50,7 +55,6 @@ void spike_vector_matmul_gpu_f32(cudaStream_t stream, void** buffers,
   spike_vector_matmul_gpu<<<grid_dim,block_dim,max_num_spikes*sizeof(unsigned int),stream>>>(matrix, spike_ids, num_spikes, result_vector, batchsize, num_cols, max_num_spikes);
 }
 
-extern "C" 
 void spike_vector_matmul_gpu_f32_matrix_grad(cudaStream_t stream, void** buffers, 
                     const char* opaque, size_t opaque_len) {
   
@@ -127,8 +131,6 @@ void spike_vector_matmul_gpu_f32_spikes_grad(cudaStream_t stream, void** buffers
   cudaStreamSynchronize(stream);
 }
 
-
-extern "C" 
 void sparse_vector_matmul_gpu_f32(cudaStream_t stream, void** buffers, 
                     const char* opaque, size_t opaque_len) {
 
@@ -158,3 +160,7 @@ void sparse_vector_matmul_gpu_f32(cudaStream_t stream, void** buffers,
 
   sparse_vals_vector_matmul_gpu<<<grid_dim,block_dim,2*max_num_spikes*sizeof(unsigned int),stream>>>(matrix, vals, spike_ids, num_spikes, result_vector, batchsize, num_cols, max_num_spikes);
 }
+
+#ifdef __cplusplus
+}
+#endif
