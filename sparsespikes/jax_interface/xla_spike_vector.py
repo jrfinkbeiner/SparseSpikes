@@ -640,9 +640,6 @@ pxla.global_result_handlers[AbstractSparseSpikeVector] = _sparse_spike_vector_gl
 # pxla.global_result_handlers[(core.AbstractToken, pxla.OutputType.Array)] = lambda *_: lambda *_: core.token
 
 
-print("pxla.global_result_handlers", pxla.global_result_handlers)
-
-
 # Only used for Arrays that come out of pmap.
 def _array_local_result_handler(aval, sharding, indices):
   if core.is_opaque_dtype(aval.dtype):

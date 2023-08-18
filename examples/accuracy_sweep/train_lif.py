@@ -80,7 +80,7 @@ def main(args):
     if use_wandb:
         import wandb
         # wandb.init(project=f"{args.dataset_name}_threshold_sweep", config=args) # TODO save the layer sizes!!! and lsuv init params
-        wandb.init(project=f"{args.dataset_name}_sweep", config=args) # TODO save the layer sizes!!! and lsuv init params
+        wandb.init(project=f"{args.dataset_name}_sweep_2", config=args) # TODO save the layer sizes!!! and lsuv init params
 
     DATASET_NAME = args.dataset_name
     ROOT_PATH = args.root_path_data
