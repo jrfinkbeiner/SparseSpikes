@@ -895,6 +895,7 @@ def load_dataset_to_tensor_dict(dataset_name, root, sparse, seq_len, inp_dim, nu
 
 if __name__ == "__main__":
     import sys
+    datapath_root = ... # TODO set
     gens = {}
     data = {}
     rng = np.random.default_rng(42)
@@ -907,7 +908,7 @@ if __name__ == "__main__":
             # "SHD",
             rng,
             "DVSGesture",
-            root="/Data/pgi-15/finkbeiner/datasets/", 
+            root=datapath_root, 
             # root="/localdata/datasets/", 
             sparse=use_sparse, 
             # num_epochs=1, 
@@ -979,24 +980,3 @@ if __name__ == "__main__":
     print()
     print(inp_spikes_ids_sparse.shape)
     print(inp_spikes_ids_sparse[:8, :30])
-    # print(flatten_spike_id(sensor_size, inp_spikes_ids_sparse[0, 0]))
-    # print(flatten_spike_id(sensor_size, inp_spikes_ids_sparse[1, 0]))
-    # print(flatten_spike_id(sensor_size, inp_spikes_ids_sparse[2, 0]))
-    # print(flatten_spike_id(sensor_size, inp_spikes_ids_sparse[3, 0]))
-    # print(flatten_spike_id(sensor_size, inp_spikes_ids_sparse[4, 0]))
-    # print(flatten_spike_id(sensor_size, inp_spikes_ids_sparse[5, 0]))
-    # print(flatten_spike_id(sensor_size, inp_spikes_ids_sparse[5, 1]))
-    # print(flatten_spike_id(sensor_size, inp_spikes_ids_sparse[5, 2]))
-    # print()
-    # print(flatten_spike_ids(sensor_size, inp_spikes_ids_sparse[0:0+1, 0:0+1].reshape((1,1,3))))
-    # print(flatten_spike_ids(sensor_size, inp_spikes_ids_sparse[1:1+1, 0:0+1].reshape((1,1,3))))
-    # print(flatten_spike_ids(sensor_size, inp_spikes_ids_sparse[2:2+1, 0:0+1].reshape((1,1,3))))
-    # print(flatten_spike_ids(sensor_size, inp_spikes_ids_sparse[3:3+1, 0:0+1].reshape((1,1,3))))
-    # print(flatten_spike_ids(sensor_size, inp_spikes_ids_sparse[4:4+1, 0:0+1].reshape((1,1,3))))
-    # print(flatten_spike_ids(sensor_size, inp_spikes_ids_sparse[5:5+1, 0:0+1].reshape((1,1,3))))
-    # print(flatten_spike_ids(sensor_size, inp_spikes_ids_sparse[5:5+1, 1:1+1].reshape((1,1,3))))
-    # print(flatten_spike_ids(sensor_size, inp_spikes_ids_sparse[5:5+1, 2:2+1].reshape((1,1,3))))
-    # print()
-    # print(flatten_spike_ids_vec(*sensor_size, inp_spikes_ids_sparse[0:6, 0:3]))
-    # print()
-    # print(inp_spikes_ids_sparse[inp_spikes_ids_sparse > 0].flatten())

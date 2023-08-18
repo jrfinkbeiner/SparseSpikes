@@ -80,7 +80,7 @@ def main(args):
     if use_wandb:
         import wandb
         # wandb.init(project=f"{args.dataset_name}_threshold_sweep", config=args) # TODO save the layer sizes!!! and lsuv init params
-        wandb.init(project=f"{args.dataset_name}_sweep_2", config=args) # TODO save the layer sizes!!! and lsuv init params
+        wandb.init(project=f"{args.dataset_name}_sweep", config=args) # TODO save the layer sizes!!! and lsuv init params
 
     DATASET_NAME = args.dataset_name
     ROOT_PATH = args.root_path_data
@@ -266,7 +266,6 @@ if __name__ == "__main__":
     parser.add_argument('--max_activity', type=float, default=0.01, help="Max activity in case of 'multi_layer'-mode.")
     parser.add_argument('--num_hidden_layers', type=int, default=3, help="Number of IPUs to use, default `1`.")
     parser.add_argument('--sparse_size_inp', type=int, default=32, help="sparse size for input.")
-    # parser.add_argument('--num_neurons_per_tile', type=int, default=2, help="The maximal number of neurons per Tile.")
     parser.add_argument('--seq_len', type=int, default=250, help="The sequence length.")
     parser.add_argument('--num_epochs', type=int, default=25, help="The number of epochs to train the model.")
     parser.add_argument('--batchsize_test', type=int, default=2000, help="The batchsize used for validation.")
@@ -280,8 +279,7 @@ if __name__ == "__main__":
     parser.add_argument('--thresh_scheduler_mul', type=float, default=0.5, help="Multiply factor used in threshold scheduler.")
     parser.add_argument('--use_aug', type=int, default=1, help="Whether to use data agumentation during training (defualt = 0 (False)).")
     parser.add_argument('--use_crop', type=int, default=0, help="Whether to crop data (only used for DVSGesture) (defualt = 0 (False)).")
-    parser.add_argument('--root_path_data', type=str, default="/Data/pgi-15/finkbeiner/datasets/", help="Root path to datasets.")
-    # parser.add_argument('--num_tests_per_epoch', type=int, default=0.01, help="How often per epoch an eval.")
+    parser.add_argument('--root_path_data', type=str, default="./datasets/", help="Root path to datasets.")
 
     args = parser.parse_args()
 
