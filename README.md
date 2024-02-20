@@ -10,7 +10,7 @@ The repository structure is as follows:
 
 
 
-# Install guide
+## Install guide
 
 To use the code, first clode the repository and move into the directory
 
@@ -48,7 +48,7 @@ python3 tests/test.py
 ```
 
 
-# Training convergence and accuracy 
+## Training convergence and accuracy 
 
 If you want to run the example code and SNN training scripts under `examples/accuracy_sweeps` you need to install additional requirements via:
 
@@ -56,3 +56,19 @@ If you want to run the example code and SNN training scripts under `examples/acc
 pip install -r requirements_examples.txt
 pip install tonic
 ```
+
+## Citation
+
+If you found this repository useful, please cite: ([arxiv link](https://arxiv.org/abs/2311.04386))
+
+```
+@article{finkbeiner2023harnessing,
+      title={Harnessing Manycore Processors with Distributed Memory for Accelerated Training of Sparse and Recurrent Models}, 
+      author={Jan Finkbeiner and Thomas Gmeinder and Mark Pupilli and Alexander Titterton and Emre Neftci},
+      year={2023},
+      eprint={2311.04386},
+      archivePrefix={arXiv},
+      primaryClass={cs.NE}
+}
+```
+
